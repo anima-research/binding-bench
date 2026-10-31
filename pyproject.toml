@@ -1,0 +1,34 @@
+[project]
+name = "binding-bench"
+version = "0.1.0"
+description = "Binding and in-context learning batteries for language models, scored by closed-set log-probability"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+dependencies = [
+    "torch>=2.4",
+    "transformers>=4.45",
+    "numpy>=1.26",
+    "requests>=2.31",   # riders / bindprobes grids score against a server's /logprobs endpoint
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-xdist>=3.5",
+]
+
+# Checkpoint formats beyond hf: are loader plugins in this group: name = the spec kind, value = a callable
+# (ModelSpec, device) -> LoadedModel. kotodama registers `koto` from its own package.
+# [project.entry-points."binding_bench.loaders"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["binding_bench*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,10 @@
+site.env
+__pycache__/
+.venv*/
+.cache/
+*.egg-info/
+
+# Private working notes and the journal live in the lab repo (symlinked here); local agent guidance
+notes
+journal
+CLAUDE.local.md

@@ -1,0 +1,62 @@
+{
+  "pages": {
+    "CONTRIBUTING.md": {
+      "dep_len": 2.4204,
+      "rates": {
+        "denominal": 1.7361,
+        "inanimate": 2.6042,
+        "long": 1.7361,
+        "orc": 2.6042,
+        "orc_all": 6.0764,
+        "orc_reduced": 3.4722,
+        "stacked": 2.6042
+      },
+      "sentences": 84,
+      "words": 1152
+    },
+    "README.md": {
+      "dep_len": 2.1531,
+      "rates": {
+        "denominal": 0.0,
+        "inanimate": 6.192,
+        "long": 3.096,
+        "orc": 3.096,
+        "orc_all": 3.096,
+        "orc_reduced": 0.0,
+        "stacked": 0.0
+      },
+      "sentences": 24,
+      "words": 323
+    },
+    "docs/PRIOR-ART.md": {
+      "dep_len": 2.3355,
+      "rates": {
+        "denominal": 0.0,
+        "inanimate": 5.1813,
+        "long": 2.5907,
+        "orc": 2.5907,
+        "orc_all": 2.5907,
+        "orc_reduced": 0.0,
+        "stacked": 5.1813
+      },
+      "sentences": 30,
+      "words": 386
+    },
+    "docs/ROADMAP.md": {
+      "dep_len": 2.3515,
+      "rates": {
+        "denominal": 1.5456,
+        "inanimate": 0.0,
+        "long": 1.5456,
+        "orc": 0.0,
+        "orc_all": 3.0912,
+        "orc_reduced": 3.0912,
+        "stacked": 0.0
+      },
+      "sentences": 52,
+      "words": 647
+    }
+  },
+  "parser": "en_core_web_trf",
+  "reference": "wikimedia/wikipedia 20231101.en, first 3000 articles (bigrams), 120 parsed"
+}
