@@ -269,3 +269,21 @@ def test_report_cli(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "| m1 |" in out and "1.000" in out
     assert json.loads((tmp_path / "r.json").read_text())["m1"]["decomp"]["third/0shot"]["acc"] == 1.0
+
+
+def test_run_scores_extra_row_files_with_one_load(tmp_path, tok, monkeypatch):
+    """``run --rows NAME=FILE`` scores prompt-row files under the same loaded model (one load for everything)."""
+    from binding_bench.binding import models
+    loads = []
+    monkeypatch.setattr(models, "load", lambda spec, device="cuda": loads.append(spec) or _model(tok))
+    a, b = tmp_path / "a.jsonl", tmp_path / "b.jsonl"
+    a.write_text("".join(json.dumps(r) + "\n" for r in _rows(6)))
+    b.write_text("".join(json.dumps(r) + "\n" for r in _rows(4)))
+    out = tmp_path / "scores"
+    assert cli_main(["run", "--model", "hf:stub", "--name", "m", "--batteries", "", "--out", str(out),
+                     "--device", "cpu", "--rows", f"ladder={a}", "--rows", f"situation={b}"]) == 0
+    assert len(loads) == 1
+    assert len(read_jsonl(out / "ladder" / "m.jsonl")) == 6 and len(read_jsonl(out / "situation" / "m.jsonl")) == 4
+    with pytest.raises(SystemExit):
+        cli_main(["run", "--model", "hf:stub", "--name", "m", "--batteries", "", "--out", str(out),
+                  "--rows", "nofile"])

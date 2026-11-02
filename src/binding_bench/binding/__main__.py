@@ -50,6 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--device", default="cuda")
     r.add_argument("--batch", type=int, default=32)
     r.add_argument("--no-pin-check", action="store_true", help="score files that differ from their pins (debug)")
+    r.add_argument("--rows", action="append", default=[], metavar="NAME=FILE",
+                   help="also score a prompt-row file with the same loaded model, into OUT/NAME/ (repeatable; e.g. "
+                        "riders, a wording ladder, the situation battery)")
     p = sub.add_parser("report", help="the scorecard from scored prompt-row batteries")
     p.add_argument("--scores", required=True, help="a run --out directory")
     p.add_argument("--models", default="", help="comma list (default: every model found)")
@@ -94,9 +97,15 @@ def build_parser() -> argparse.ArgumentParser:
 def cmd_run(a: argparse.Namespace) -> int:
     from binding_bench.binding import models, score
 
-    bats = bt.resolve(a.batteries)
-    root = bt.prompts_dir(a.prompts_dir)
-    paths = {b.name: bt.path_for(b, root, check=not a.no_pin_check) for b in bats}   # fail before loading weights
+    bats = bt.resolve(a.batteries) if a.batteries else []
+    extra: list[tuple[str, Path]] = []
+    for spec in a.rows:
+        name, sep, path = spec.partition("=")
+        if not sep or not name or not Path(path).is_file():
+            raise SystemExit(f"--rows wants NAME=FILE with an existing file, got {spec!r}")
+        extra.append((name, Path(path)))
+    root = bt.prompts_dir(a.prompts_dir) if bats else None
+    paths = {b.name: bt.path_for(b, root, check=not a.no_pin_check) for b in bats} if root else {}   # fail before loading weights
     if not a.no_pin_check:
         for b in bats:
             bt.check_render(b, paths[b.name])
@@ -112,6 +121,8 @@ def cmd_run(a: argparse.Namespace) -> int:
             if b.families:
                 items = [it for it in items if it.family in b.families]
             score.score_bindprobe_items(model, items, b.conditions or CONDITIONS, dest, a.name, max_batch=a.batch)
+    for name, path in extra:
+        score.score_prompt_rows(model, read_jsonl(path), out / name / f"{a.name}.jsonl", a.name, max_batch=a.batch)
     return 0
 
 
