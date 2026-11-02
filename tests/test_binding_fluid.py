@@ -290,12 +290,13 @@ def test_f2_v2_one_answer_and_operand_copy_controlled(full):
 def test_f4_pattern_continues_to_gold(full):
     for r in full["fluid-v1-seqind"]:
         ex, q = _body(r)
-        m, g, j = r["m"], r["gap"], r["copy_pos"]
+        m, g, j, ld = r["m"], r["gap"], r["copy_pos"], r["lead"]
+        assert ld == fl.f4_lead(m)
         order = fl.f4_order(r["pattern"], m)
         for e in ex:
-            t = e.split()
+            t = e.split()[ld:]
             assert len(t) == 2 * m + g and t[m + g:] == [t[x] for x in order]
-        qt = q.split()
+        qt = q.split()[ld:]
         assert len(qt) == m + g + j and qt[order[j]] == r["gold"]
         assert r["lag"] == m + g + j - order[j]
         words = [w for line in r["prompt"].split("\n")[1:] for w in line.split()]
@@ -310,6 +311,111 @@ def test_c0_facts_and_frames(full):
         answer = {s: a for s, a, _ in facts}
         assert answer[r["subject"]] == r["gold"]
         assert all(fl.count_word(r["prompt"], c.strip()) == 0 for c in r["candidates"])
+
+
+def _f2_wide_text_answers(r: dict[str, Any]) -> set[str]:
+    """Every answer under the widened readings, re-derived from the prompt text: each query operator takes FIRST,
+    SECOND, the partner of the left or of the right operand (under its own pairing of the six candidates) or a
+    constant output, whichever fit that operator's example lines."""
+    ex, q = _body(r)
+    toks = sorted(c.strip() for c in r["candidates"])
+    query = q.replace("(", " ").replace(")", " ").split()[:-1]
+
+    def pairings(xs: list[str]) -> list[dict[str, str]]:
+        if not xs:
+            return [{}]
+        return [{**m, xs[0]: b, b: xs[0]} for b in xs[1:] for m in pairings([x for x in xs[1:] if x != b])]
+
+    fits: dict[str, list[Any]] = {}
+    for op in set(query[1::2]):
+        mine = [(a, b, res) for a, o, b, _, res in (e.split() for e in ex) if o == op]
+        hs: list[Any] = [f for f in (lambda a, b: a, lambda a, b: b) if all(f(a, b) == c for a, b, c in mine)]
+        for p in pairings(toks):
+            hs += [f for f in (lambda a, b, p=p: p[a], lambda a, b, p=p: p[b]) if all(f(a, b) == c for a, b, c in mine)]
+        if len({c for _, _, c in mine}) == 1:
+            hs.append(lambda a, b, c=mine[0][2]: c)
+        fits[op] = hs
+    ops = sorted(fits)
+    out: set[str] = set()
+    for combo in itertools.product(*(fits[o] for o in ops)):
+        f = dict(zip(ops, combo))
+        v = query[0]
+        for i in range(1, len(query), 2):
+            v = f[query[i]](v, query[i + 1])
+        out.add(v)
+    return out
+
+
+def test_f2_v2_one_answer_under_the_widened_readings(full):
+    """No v2 row has a second answer when an operator may read as the partner of the right operand, carry its own
+    pairing or output a constant, and every operator's example lines show at least two outputs."""
+    for r in full["fluid-v2-algebra"]:
+        assert _f2_wide_text_answers(r) == {r["gold"]}, r["id"]
+        outs: dict[str, set[str]] = {}
+        for e in _body(r)[0]:
+            a, op, b, _, res = e.split()
+            outs.setdefault(op, set()).add(res)
+        assert min(len(v) for v in outs.values()) >= fl.F2_MIN_OUTPUTS, r["id"]
+    # the check bites: a partner-of-right reading and a constant-looking SECOND each give a second answer
+    right = [(0, "⊗", 1, 2), (3, "⊗", 4, 5), (4, "⊗", 2, 1)]          # PARTNER (0 1)(2 4)(3 5); query 0 ⊗ 4
+    assert fl.f2_answers(right, [0, 4], ["⊗"]) == {2, 5}
+    const = [(0, "⊕", 1, 1), (2, "⊕", 1, 1), (3, "⊕", 1, 1)]          # SECOND, or "always 1"; query 4 ⊕ 5
+    assert fl.f2_answers(const, [4, 5], ["⊕"]) == {5, 1}
+
+
+def test_f1_cond_alternation_never_contradicts_the_gold(full):
+    """From F1_ALTERNATION_MIN_N examples on, a conditioned prompt's affixes never alternate line by line, so the
+    reading "the affix alternates" does not fit and cannot pick the wrong class. Two examples (one per class)
+    always alternate; there the reading is recorded per row and is the anti-recency answer."""
+    seen = {n: 0 for n in fl.F1_N}
+    for r in full["fluid-v1-morph"]:
+        if r["rule"] != "cond":
+            continue
+        seq = [e.split()[-1] for e in _body(r)[0]]
+        alternates = all(a != b for a, b in zip(seq, seq[1:]))
+        n = r["n_examples"]
+        seen[n] += 1
+        if n >= fl.F1_ALTERNATION_MIN_N:
+            assert not alternates and r["alternation_answer"] is None, r["id"]
+        else:
+            other = next(a for a in set(seq) if a != seq[-1])
+            assert alternates and r["alternation_answer"] == other
+            assert (r["alternation_answer"] == r["gold"]) == (not r["gold_is_recent"])
+    assert all(v == fl.SEEDS * fl.FAMILIES["F1"].trials for v in seen.values())
+
+
+def test_c0_excluded_distractors_never_drawn(full):
+    for rel, by in fl.C0_EXCLUDE.items():
+        facts = fl.RELATIONS[rel][1]
+        for subj, words in by.items():
+            assert subj in {s for s, _, _ in facts} and words <= {a for _, a, _ in facts}
+    hits = 0
+    for r in full["cryst-v1"]:
+        excluded = fl.C0_EXCLUDE.get(r["relation"], {}).get(r["subject"], frozenset())
+        assert not excluded & {c.strip() for c in r["candidates"]}, r["id"]
+        hits += bool(excluded)
+    assert hits > 0
+
+
+def test_f4_line_local_shortcut_is_flat_across_gaps(full):
+    """A reader that picks uniformly among the candidates occurring once in the query line gets the same rate at
+    every gap of a pattern length: the distractors are sourced alike at every gap, and copy positions are exactly
+    balanced per cell, so the cell means agree exactly (1e-9). Across pattern lengths the rate is set by the
+    uncopied motif tokens and stays within 2 × chance."""
+    by: dict[str, list[float]] = {}
+    for r in full["fluid-v1-seqind"]:
+        q = _body(r)[1].split()
+        cands = [c.strip() for c in r["candidates"]]
+        once = [c for c in cands if q.count(c) == 1]
+        rate = (1 / len(once)) if r["gold"] in once else 0.0
+        assert rate == r["inline_follower"]
+        assert {r["roles"][c] for c in cands} <= {"gold", "recent_answer", "motif", "lead"}
+        by.setdefault(r["cell"], []).append(rate)
+    chance = 1 / fl.FAMILIES["F4"].n_candidates
+    for m in fl.F4_M:
+        rates = [sum(by[f"m{m}|g{g}"]) / len(by[f"m{m}|g{g}"]) for g in fl.F4_GAP]
+        assert max(rates) - min(rates) < 1e-9, (m, rates)
+        assert rates[0] <= 2 * chance, (m, rates)
 
 
 # ── shortcut audits ───────────────────────────────────────────────────────────────────────────────────────────────

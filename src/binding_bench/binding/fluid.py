@@ -31,12 +31,13 @@ Families (battery · ladder, easy → hard · candidates · chance):
                         two registers are a condition inside every rung. 5 candidates: the current value, the STALE
                         value (the one just before it), an older value of the same holder, and the other holders'
                         values. Chance 1/5.
-  F4  fluid-v1-seqind   abstract patterns over fresh nonce tokens, 3 example lines then a partial line: a motif of m
-                        tokens, g gap tokens, then the motif again either repeated (period-m) or reversed (mirror:
-                        ``A B B A``, ``A B C C B A``). Rungs: pattern length m ∈ {2, 3, 4} × gap g ∈ {0, 2, 4} (the
-                        lag back to the motif's last occurrence grows with g): 9 rungs. 6 candidates: the pattern's
-                        tokens plus in-context distractors (gap tokens, the last example line's token at the same
-                        position, other lines' tokens). Chance 1/6.
+  F4  fluid-v1-seqind   abstract patterns over fresh nonce tokens, 3 example lines then a partial line: 5 − m lead
+                        tokens, a motif of m tokens, g gap tokens, then the motif again either repeated (period-m)
+                        or reversed (mirror: ``A B B A``, ``A B C C B A``). Rungs: pattern length m ∈ {2, 3, 4} × gap
+                        g ∈ {0, 2, 4} (the lag back to the motif's last occurrence grows with g): 9 rungs. 6
+                        candidates: the motif's tokens, the last example line's token at the same position, and the
+                        query line's lead tokens, so the distractors come from the same places at every gap.
+                        Chance 1/6.
   C0  cryst-v1          real-world facts in the F1 frame (header, ``subject → answer`` lines, ``subject →``):
                         capitals, chemical symbols, authors → works, currencies. Rungs: shots ∈ {6, 3, 1, 0}; the
                         relation is a condition inside every rung. 6 candidates, all from the relation's answers,
@@ -49,7 +50,10 @@ Choices left open, fixed here:
     word, not of every prior association.
   - every prompt starts with one header line (F3 has none: its narrative is the frame).
   - F1: all stem syllables of a prompt distinct; a vowel-change stem's consonant row never appears elsewhere in the
-    prompt; the middle tier alternates infix and vowel change row by row (``rule``).
+    prompt; the middle tier alternates infix and vowel change row by row (``rule``). A conditioned prompt with 4 or
+    more examples never alternates its two affixes line by line, so "the affix alternates" does not fit it; with 2
+    examples (one per class) the affixes always alternate, that reading fits and answers against the recency
+    schedule, and rows record it (``alternation_answer``).
   - F2: the query uses min(k, d) distinct operators; no example line repeats the query's first step; every PARTNER
     step the query needs is shown as an example line with another right operand; operator symbols are assigned to
     rules at random per prompt. Projections short-circuit a chain, so rows record ``path_steps`` (the PARTNER steps
@@ -64,9 +68,12 @@ Choices left open, fixed here:
     1/5 of rows (the neutral rate); on the rest one reassignment is held back to close the prompt. (Introducing the other holders after the chain
     left the ladder without an easy end: primacy in code and recency in prose both pulled away from gold.)
   - F4: example and query tokens all distinct within a prompt; within a rung, pattern type and the read position
-    in the copy are balanced.
+    in the copy are balanced. Rows record ``inline_follower``, the accuracy of picking uniformly among the
+    candidates that occur once in the query line; it is the same at every gap of a pattern length.
   - C0: the work's answer is the first word of its title (the shots show whole titles); the facts are unambiguous
-    inside every candidate set and stable (currencies: none mid-changeover).
+    inside every candidate set and stable (currencies: none mid-changeover). A distractor that also answers the
+    subject (a former currency, the first word of another of the author's titles) is never drawn for it
+    (:data:`C0_EXCLUDE`).
   - size: 4 seeds per cell; F1 / F2 / F4 120 rows per rung, F3 60 per rung × register, C0 64 per shots ×
     relation: 5,464 rows (the order of capacity-v1's 5,760).
   - balance: per cell, the gold's position in the candidate list is exactly balanced, and the gold's identity
@@ -96,8 +103,10 @@ have one version. :data:`FLUID_SETS` names one battery per family; the ``fluid``
       each at 1/6 (:data:`F2_OPERAND_TARGET`). A one-operator query cannot escape its rule (FIRST answers the first
       operand, SECOND the last, PARTNER twice the first: :func:`operand_forced`), so the k = 1 rungs keep those
       rates (1/3 first and 1/3 last; 2/3 first at depth 2), and their other rows avoid operands. v2 also drops any
-      row with more than one defensible answer (:func:`f2_answers`: every pairing × every rule assignment, rules
-      may repeat); v1 had 13 (SECOND examples that also fit a pairing). Rows add ``gold_operand``,
+      row with more than one defensible answer (:func:`f2_answers`: each query operator read as FIRST, SECOND, the
+      partner of the left or of the right operand under its own pairing, or a constant, whichever fit its example
+      lines), and any row where one operator's example lines all give the same output; v1 had 13 rows with two
+      answers under shared pairings alone (SECOND examples that also fit a pairing). Rows add ``gold_operand``,
       ``operand_forced`` and ``operand_follower`` (the accuracy of copying a uniformly chosen operand); the audit
       gates first / last against max(forced share, 1/6).
   F3  v1's recency control recorded the last line's value, but a held-back reassignment's value could miss the
@@ -122,6 +131,7 @@ the models passed in) and the crystallized score (C0's AUC, z-scored the same wa
 
 from __future__ import annotations
 
+import itertools
 import math
 import random
 import re
@@ -216,6 +226,13 @@ RELATIONS: dict[str, tuple[str, tuple[Fact, ...]]] = {
         ("South Korea", "won"), ("South Africa", "rand"), ("Brazil", "real"), ("Armenia", "dram"),
         ("Kyrgyzstan", "som"), ("Costa Rica", "colon"), ("Peru", "sol"), ("Bosnia and Herzegovina", "mark"),
     ))),
+}
+
+# C0 distractors a subject never draws: words that also answer it correctly (relation → subject → words).
+C0_EXCLUDE: dict[str, dict[str, frozenset[str]]] = {
+    "currency": {"Germany": frozenset({"mark"})},                  # the Deutsche Mark, Germany's currency to 2002
+    "author": {"Charles Dickens": frozenset({"Little"}),           # Little Dorrit
+               "Robert Louis Stevenson": frozenset({"Doctor"})},   # the "Dr" of Dr Jekyll and Mr Hyde
 }
 
 POOLS: dict[str, tuple[str, ...]] = {
@@ -392,6 +409,10 @@ def _lines(header: str, lines: Sequence[str], tail: str) -> str:
 # ── F1 nonce morphology ──────────────────────────────────────────────────────────────────────────────────────────
 
 F1_HEADER = "Word → plural:"
+# From this many examples on, a conditioned prompt's affixes never alternate line by line, so the reading "the affix
+# alternates" contradicts the examples. Two examples (one per class) always alternate: there the reading fits every
+# row and is recorded per row as ``alternation_answer``.
+F1_ALTERNATION_MIN_N = 4
 
 
 def _cons_row(c: str) -> list[str]:
@@ -477,12 +498,17 @@ def _f1_make(rng: random.Random, params: tuple[str, int], s: _Schedule, k: int) 
     pick = [j for j, st in enumerate(ex) if (len(st) == qclass) == want]
     j = rng.choice(pick)
     ex.append(ex.pop(j))
+    seq = [affix[len(st)] for st in ex]
+    alternates = all(a != b for a, b in zip(seq, seq[1:]))
+    if alternates and n >= F1_ALTERNATION_MIN_N:
+        return None                                     # "the affix alternates line by line" must not fit
     lines = [f"{' '.join(st)} → {' '.join(st)} {affix[len(st)]}" for st in ex]
     q = " ".join(query)
     roles = {gold: "gold", other: "wrong_class", query[-1]: "reduplicate", query[0]: "restart", wrong: "wrong_affix"}
     return _finish(fam, _lines(F1_HEADER, lines, f"{q} → {q}"), gold, roles, s.gold_index[k], rng,
                    affix[len(ex[-1])], 0.5, 0.5,
-                   {"tier": tier, "n_examples": n, "rule": "cond", "stem": query, "stem_syllables": qclass})
+                   {"tier": tier, "n_examples": n, "rule": "cond", "stem": query, "stem_syllables": qclass,
+                    "alternation_answer": (other if seq[-1] == gold else gold) if alternates else None})
 
 
 def _gen_morph(seeds: int, trials: int) -> list[Row]:
@@ -638,40 +664,76 @@ def operand_forced(rules: Sequence[str], depth: int) -> Optional[str]:
     return "last" if rules[0] == "second" else None
 
 
-def f2_answers(eqs: Sequence[tuple[int, str, int, int]], leaves: Sequence[int], ops: Sequence[str],
-               inventory: int = F2_INVENTORY, distinct_rules: bool = True) -> set[int]:
-    """Every answer some reading of the prompt supports: each pairing of the inventory and each assignment of rules
-    to the operators shown (distinct rules per operator if ``distinct_rules``) that fits every example line, then
-    the query evaluated left-nested. One element ⇔ the prompt has one defensible answer."""
-    def matchings(xs: list[int]) -> list[dict[int, int]]:
-        if not xs:
-            return [{}]
-        a, out = xs[0], []
-        for b in xs[1:]:
-            rest = [x for x in xs if x not in (a, b)]
-            for m in matchings(rest):
-                out.append({**m, a: b, b: a})
-        return out
+# The readings :func:`f2_answers` tries for each operator, each fitted to that operator's own example lines:
+# FIRST, SECOND, the partner of the left operand, the partner of the right operand (each under any pairing of the
+# inventory, its own per operator) and a constant output.
+F2_READINGS: tuple[str, ...] = ("first", "second", "partner", "partner_right", "constant")
+F2_MIN_OUTPUTS = 2          # distinct outputs among each operator's example lines (one output also reads as constant)
 
-    syms = sorted({e[1] for e in eqs} | set(ops))
-    answers: set[int] = set()
-    pairings = matchings(list(range(inventory)))
-    for combo in _rule_assignments(len(syms), distinct_rules):
-        rule = dict(zip(syms, combo))
-        for partner in pairings:
-            if all(f2_apply(rule[op], a, b, partner) == r for a, op, b, r in eqs):
-                v = leaves[0]
-                for i, op in enumerate(ops):
-                    v = f2_apply(rule[op], v, leaves[i + 1], partner)
-                answers.add(v)
-    return answers
+Reading = tuple[str, Optional[Mapping[int, int]], Optional[int]]      # (reading, pairing, constant)
 
 
-def _rule_assignments(n: int, distinct: bool) -> list[tuple[str, ...]]:
-    out: list[tuple[str, ...]] = [()]
-    for _ in range(n):
-        out = [c + (r,) for c in out for r in F2_RULES if not (distinct and r in c)]
+def _f2_read(reading: Reading, left: int, right: int) -> int:
+    kind, pairing, const = reading
+    if kind == "first":
+        return left
+    if kind == "second":
+        return right
+    if kind == "constant" and const is not None:
+        return const
+    if pairing is not None and kind in ("partner", "partner_right"):
+        return pairing[left if kind == "partner" else right]
+    raise ValueError(f"unknown F2 reading {reading!r}")
+
+
+def _matchings(xs: list[int]) -> list[dict[int, int]]:
+    """Every perfect pairing of ``xs`` (as a symmetric map)."""
+    if not xs:
+        return [{}]
+    a, out = xs[0], []
+    for b in xs[1:]:
+        rest = [x for x in xs if x not in (a, b)]
+        for m in _matchings(rest):
+            out.append({**m, a: b, b: a})
     return out
+
+
+def f2_readings(lines: Sequence[tuple[int, int, int]], inventory: int = F2_INVENTORY) -> list[Reading]:
+    """Every reading in :data:`F2_READINGS` that fits all of one operator's example lines ``(left, right, out)``."""
+    out: list[Reading] = []
+    for kind in ("first", "second"):
+        r: Reading = (kind, None, None)
+        if all(_f2_read(r, a, b) == c for a, b, c in lines):
+            out.append(r)
+    for pairing in _matchings(list(range(inventory))):
+        for kind in ("partner", "partner_right"):
+            r = (kind, pairing, None)
+            if all(_f2_read(r, a, b) == c for a, b, c in lines):
+                out.append(r)
+    outs = {c for _, _, c in lines}
+    if len(outs) == 1:
+        out.append(("constant", None, outs.pop()))
+    return out
+
+
+def f2_answers(eqs: Sequence[tuple[int, str, int, int]], leaves: Sequence[int], ops: Sequence[str],
+               inventory: int = F2_INVENTORY) -> set[int]:
+    """Every answer some reading of the prompt supports: each operator in the query takes any reading of
+    :data:`F2_READINGS` that fits its own example lines (operators may share a reading or a pairing, or not), and the
+    query is evaluated left-nested. One element ⇔ the prompt has one defensible answer."""
+    by_op: dict[str, list[tuple[int, int, int]]] = defaultdict(list)
+    for a, op, b, r in eqs:
+        by_op[op].append((a, b, r))
+    syms = sorted(set(ops))
+    fits = [f2_readings(by_op[op], inventory) for op in syms]
+    answers: set[int] = set()
+    for combo in itertools.product(*fits):
+        reading = dict(zip(syms, combo))
+        v = leaves[0]
+        for i, op in enumerate(ops):
+            v = _f2_read(reading[op], v, leaves[i + 1])
+        answers.add(v)
+    return answers
 
 
 @dataclass
@@ -714,9 +776,13 @@ def _f2v2_make(rng: random.Random, params: tuple[int, int], s: _Schedule, k: int
         for ln in lines:
             a, op, b, _, r = ln.split(" ")
             eqs.append((t[a], op, t[b], t[r]))
-        # one answer under every reading, operators sharing a rule included (the prompt does not say they differ)
-        answers = f2_answers(eqs, [t[x] for x in row["leaves"]], row["query_ops"], distinct_rules=False)
-        if len(answers) != 1:
+        # no operator's examples share one output, and one answer under every reading (:func:`f2_answers`)
+        outputs: defaultdict[str, set[int]] = defaultdict(set)
+        for _, op, _, r in eqs:
+            outputs[op].add(r)
+        if min(len(v) for v in outputs.values()) < F2_MIN_OUTPUTS:
+            continue
+        if len(f2_answers(eqs, [t[x] for x in row["leaves"]], row["query_ops"])) != 1:
             continue
         found[key] = row
         if forced is not None or key == top or len(found) == 3:
@@ -912,42 +978,52 @@ def _f4_sched(rng: random.Random, n: int, params: tuple[int, int]) -> _Schedule:
                      _balanced(rng, n, combos))
 
 
+def f4_lead(m: int) -> int:
+    """Fresh tokens that open every line before the motif: as many as the candidates left after the gold, the
+    recent answer and the other motif tokens, so the in-line distractors are lead tokens at every gap."""
+    return FAMILIES["F4"].n_candidates - (m + 1)
+
+
+def inline_follower(query: Sequence[str], gold: str, cands: Sequence[str]) -> float:
+    """The accuracy of a line-local reader: uniform over the candidates that occur exactly once in the query line."""
+    once = [w for w in cands if list(query).count(w) == 1]
+    return (1 / len(once)) if gold in once else 0.0
+
+
 def _f4_make(rng: random.Random, params: tuple[int, int], s: _Schedule, k: int) -> Optional[Row]:
     fam = FAMILIES["F4"]
     m, g = params
     pattern, j = s.aux[k]
     order = f4_order(pattern, m)
     gold: str = s.ident[k]
-    width = m + g
+    lead = f4_lead(m)
+    width = lead + m + g
     toks = rng.sample([w for w in NONCE if w != gold], (F4_EXAMPLES + 1) * width - 1)
-    qmotif = toks[:m - 1]
+    qlead = toks[:lead]
+    qmotif = toks[lead:lead + m - 1]
     qmotif.insert(order[j], gold)
-    qgap = toks[m - 1:width - 1]
+    qgap = toks[lead + m - 1:width - 1]
     pool = toks[width - 1:]
     lines: list[list[str]] = []
     for e in range(F4_EXAMPLES):
         chunk = pool[e * width:(e + 1) * width]
-        motif, gap = chunk[:m], chunk[m:]
-        lines.append(motif + gap + [motif[x] for x in order])
-    query = qmotif + qgap + [qmotif[x] for x in order[:j]]
+        head, motif, gap = chunk[:lead], chunk[lead:lead + m], chunk[lead + m:]
+        lines.append(head + motif + gap + [motif[x] for x in order])
+    query = qlead + qmotif + qgap + [qmotif[x] for x in order[:j]]
     recent = lines[-1][width + j]
+    # The distractors come from the same places at every gap: the last example line's token at the read position,
+    # the query's other motif tokens, and its lead tokens (each once in the query line, like the gold).
     roles: dict[str, str] = {gold: "gold", recent: "recent_answer"}
     for w in qmotif:
         roles.setdefault(w, "motif")
-    for w in rng.sample(qgap, len(qgap)):
-        if len(roles) < fam.n_candidates:
-            roles.setdefault(w, "gap")
-    earlier = [w for ln in lines for w in ln if w not in roles]
-    rng.shuffle(earlier)
-    for w in earlier:
-        if len(roles) >= fam.n_candidates:
-            break
-        roles.setdefault(w, "other_line")
+    for w in qlead:
+        roles.setdefault(w, "lead")
     c = fam.n_candidates
-    lag = width + j - order[j]
+    lag = m + g + j - order[j]
     return _finish(fam, _lines(F4_HEADER, [" ".join(ln) for ln in lines], " ".join(query)), gold, roles,
                    s.gold_index[k], rng, recent, 1 / c, 1 / c,
-                   {"m": m, "gap": g, "pattern": pattern, "copy_pos": j, "lag": lag})
+                   {"m": m, "gap": g, "lead": lead, "pattern": pattern, "copy_pos": j, "lag": lag,
+                    "inline_follower": inline_follower(query, gold, list(roles))})
 
 
 def _gen_seqind(seeds: int, trials: int) -> list[Row]:
@@ -973,7 +1049,11 @@ def _c0_make(rng: random.Random, params: tuple[str, int], s: _Schedule, k: int) 
     others = [f for f in facts if f[1] != gold]
     shown = rng.sample(others, shots)
     used = {f[1] for f in shown}
-    distract = rng.sample([f[1] for f in others if f[1] not in used], fam.n_candidates - 1)
+    excluded = C0_EXCLUDE.get(relation, {}).get(subj, frozenset())
+    free = [f[1] for f in others if f[1] not in used and f[1] not in excluded]
+    if len(free) < fam.n_candidates - 1:
+        return None                                     # too few distractors left: the shots must show an excluded one
+    distract = rng.sample(free, fam.n_candidates - 1)
     prompt = _lines(header, [f"{a} → {d}" for a, _, d in shown], f"{subj} →")
     if any(count_word(prompt, w) for w in [gold, *distract]):
         return None                                     # a candidate named in the prompt would be a cue
