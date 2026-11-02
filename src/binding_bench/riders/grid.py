@@ -33,7 +33,7 @@ from typing import Any, Callable, Literal, Optional
 
 import requests
 
-from binding_bench.riders.items import RENDERERS, Item, build_prompt, load_items
+from binding_bench.riders.items import ALL_RENDERERS, RENDERERS, Item, build_prompt, load_items
 
 Kind = Literal["koto", "hf-base", "hf-chat"]
 KINDS: tuple[Kind, ...] = ("koto", "hf-base", "hf-chat")
@@ -170,8 +170,8 @@ def run_grid(model: str, kind: str, items: list[Item], shots_all: list[Item],
     endpoint = endpoint or default_endpoint()
     chat_family(kind)  # validate early
     for rd in renderers:
-        if rd not in RENDERERS:
-            raise ValueError(f"unknown renderer {rd!r}; choose from {RENDERERS}")
+        if rd not in ALL_RENDERERS:
+            raise ValueError(f"unknown renderer {rd!r}; choose from {ALL_RENDERERS}")
     if not 1 <= batch <= 64:
         raise ValueError(f"batch must be in [1, 64] (server LOGPROB_MAX_BATCH), got {batch}")
     tier_set = set(tiers)

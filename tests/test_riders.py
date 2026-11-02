@@ -105,6 +105,32 @@ def test_grid_tokenizers_and_selftest(capsys):
     assert items.selftest() == 0
 
 
+def test_format_ladder_renderers():
+    """Each ladder renderer keeps the item (gold, candidates, mention order) and differs from its neighbour as
+    documented; the banked four stay the default set."""
+    import re
+    its, shots = items.generate(list(items.BANKED_VERIFIED_NAMES), 4, 3, items.DEFAULT_SEED)
+    assert items.RENDERERS == ("code", "narrative", "screenplay", "chat")
+    assert not set(items.LADDER_RENDERERS) & set(items.RENDERERS)
+    pat = re.compile(r"\b(" + "|".join(map(re.escape, items.BANKED_VERIFIED_NAMES)) + r")\b")
+    for it in its:
+        para, lines = items.render_paragraph(it, False), items.render_lines(it, False)
+        assert lines.replace("\n", " ") == para
+        assert re.sub(r"^(SAM|RIVER): ", "", items.render_screenplay(it, False), flags=re.M) == lines
+        assert para == items.render_narrative(it, False).replace(f" Box {it.query_box} now", f" So Box {it.query_box} now")
+        talk = items.render_talk(it, False)
+        assert [ln.split(":")[0] for ln in talk.split("\n")] == \
+            [ln.split(":")[0] for ln in items.render_screenplay(it, False).split("\n")]
+        for rd in items.LADDER_RENDERERS:
+            text = items.build_prompt(it, rd, [], "raw")["prompt"]
+            assert pat.findall(text) == it.mention_order, rd
+            assert not text.endswith(" ")
+            shot = items.build_prompt(it, rd, shots[:3], "raw")["prompt"]
+            assert shot.endswith(text) and shot.count("\n\n###\n\n") == 3
+    with pytest.raises(ValueError, match="unknown renderer"):
+        items.build_prompt(its[0], "poem", [], "raw")
+
+
 # ── (b) aggregate on a synthetic grid ──────────────────────────────────────────
 
 def _row(model: str, rd: str, nshots: int, tier: str, rank: int, *, n: int = 2,

@@ -15,11 +15,12 @@ CLI: ``python -m binding_bench.riders {gen,verify-names,selftest,run,aggregate,s
 from binding_bench.riders import aggregate, errors, grid, items, lite, smoothing
 from binding_bench.riders.aggregate import cc_acc, write_tables
 from binding_bench.riders.grid import default_endpoint, run_grid, score_row
-from binding_bench.riders.items import (RENDERERS, Item, build_prompt, emit, generate,
+from binding_bench.riders.items import (LADDER_RENDERERS, RENDERERS, Item, build_prompt, emit, generate,
                                         load_items)
 from binding_bench.riders.smoothing import smoothing_index
 
 __all__ = [
+    "LADDER_RENDERERS",
     "RENDERERS",
     "Item",
     "aggregate",

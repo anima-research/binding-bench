@@ -10,6 +10,18 @@ Renderers over the SAME abstract item:
   chat       — the screenplay lines as a role-tagged conversation (koto ChatML
                built here; HF chat models template server-side)
 
+Format-ladder renderers (``LADDER_RENDERERS``; not in ``RENDERERS``, so the
+banked grids and the in-loop slice are unchanged). Each differs from a
+neighbour in one respect:
+  paragraph  — the screenplay's lines run together with spaces, no speakers
+  lines      — the same lines, one per line, no speakers
+               (paragraph -> lines: whitespace only; lines -> screenplay: the
+               speaker labels only; screenplay -> chat: labels -> chat turns)
+  story      — the same events told as fiction, one paragraph (vs paragraph:
+               the wording only)
+  talk       — the screenplay's lines spoken in the first person (vs
+               screenplay: the wording only)
+
 Invariants (``selftest``):
   * gold is computed ONCE, from the abstract simulation, for all renderers;
   * object-mention order is identical across renderers;
@@ -86,9 +98,12 @@ BANKED_NAMES_TAG = "<banked:p06-verified-names-2026-08-02>"
 
 SPEAKERS = ("SAM", "RIVER")  # screenplay/chat; SAM lines -> user, RIVER -> assistant
 
-Renderer = Literal["code", "narrative", "screenplay", "chat"]
+Renderer = Literal["code", "narrative", "screenplay", "chat", "paragraph", "lines", "story", "talk"]
 Family = Literal["raw", "chatml", "hf-chat"]
 RENDERERS: tuple[Renderer, ...] = ("code", "narrative", "screenplay", "chat")
+LADDER_RENDERERS: tuple[Renderer, ...] = ("paragraph", "lines", "story", "talk")
+ALL_RENDERERS: tuple[Renderer, ...] = RENDERERS + LADDER_RENDERERS
+STORY_OPENER = "Mara was packing up her workshop."
 
 CELLS = [(n, m) for n in (2, 3, 5, 7) for m in (0, 1, 2, 4)]
 RECENCY_CONTROL_FRAC = 0.15
@@ -297,6 +312,73 @@ def render_screenplay(item: Item, with_answer: bool) -> str:
     return "\n".join(out)
 
 
+def render_paragraph(item: Item, with_answer: bool) -> str:
+    text = " ".join(_dialogue_lines(item))
+    return f"{text} {item.gold}." if with_answer else text
+
+
+def render_lines(item: Item, with_answer: bool) -> str:
+    text = "\n".join(_dialogue_lines(item))
+    return f"{text} {item.gold}." if with_answer else text
+
+
+def _story_op(op: dict[str, Any]) -> str:
+    k = op["kind"]
+    if k == "swap":
+        return f"Then she swapped what was in Box {op['i']} with what was in Box {op['j']}."
+    if k == "move":
+        return (f"She tipped everything from Box {op['i']} into Box {op['j']}, "
+                f"throwing out whatever Box {op['j']} had held.")
+    if k == "put":
+        return f"She set the {op['obj']} in the empty Box {op['i']}."
+    if k == "overwrite":
+        return f"She threw out what was in Box {op['i']} and put the {op['obj']} there instead."
+    raise ValueError(f"unknown op kind {k!r}")
+
+
+def render_story(item: Item, with_answer: bool) -> str:
+    decls = [f"She put the {o} in Box {b}." for b, o in item.boxes0.items()]
+    body = " ".join([STORY_OPENER] + decls + [_story_op(o) for o in item.ops])
+    lead = f"{body} When she had finished, Box {item.query_box} held the"
+    return f"{lead} {item.gold}." if with_answer else lead
+
+
+def _talk_op(op: dict[str, Any]) -> str:
+    k = op["kind"]
+    if k == "swap":
+        return f"I'm swapping what's in Box {op['i']} and Box {op['j']}."
+    if k == "move":
+        return (f"I'm emptying Box {op['i']} into Box {op['j']}, "
+                f"so whatever was in Box {op['j']} is gone.")
+    if k == "put":
+        return f"I'm putting the {op['obj']} in Box {op['i']}, since it's empty."
+    if k == "overwrite":
+        return f"I'm tossing what's in Box {op['i']} and putting the {op['obj']} in."
+    raise ValueError(f"unknown op kind {k!r}")
+
+
+def _talk_lines(item: Item) -> list[str]:
+    """``_dialogue_lines`` in the first person: the same line breaks, so the
+    query lands on the second speaker as in the screenplay."""
+    decls = [f"I've put the {o} in Box {b}." for b, o in item.boxes0.items()]
+    if item.m % 2 == 0:
+        lines = [" ".join(decls)]
+    else:
+        cut = max(1, (len(decls) + 1) // 2)
+        lines = [" ".join(decls[:cut]), " ".join(decls[cut:]) or "Go on."]
+    lines += [_talk_op(o) for o in item.ops]
+    lines.append(f"Okay, so Box {item.query_box} has the")
+    assert (len(lines) - 1) % 2 == 1, "query line must land on speaker 2"
+    return lines
+
+
+def render_talk(item: Item, with_answer: bool) -> str:
+    out = [f"{SPEAKERS[i % 2]}: {ln}" for i, ln in enumerate(_talk_lines(item))]
+    if with_answer:
+        out[-1] = f"{out[-1]} {item.gold}."
+    return "\n".join(out)
+
+
 def chat_messages(item: Item, with_answer: bool) -> list[dict[str, str]]:
     """The screenplay lines as alternating user/assistant turns. The final
     assistant turn is the OPEN lead-in unless with_answer (shots)."""
@@ -326,7 +408,8 @@ def chatml_render(messages: list[dict[str, str]], open_final: bool) -> str:
 
 
 _RAW_RENDERERS = {"code": render_code, "narrative": render_narrative,
-                  "screenplay": render_screenplay}
+                  "screenplay": render_screenplay, "paragraph": render_paragraph,
+                  "lines": render_lines, "story": render_story, "talk": render_talk}
 
 
 def build_prompt(item: Item, renderer: str, shots: list[Item],
@@ -341,7 +424,7 @@ def build_prompt(item: Item, renderer: str, shots: list[Item],
     """
     if renderer != "chat":
         if renderer not in _RAW_RENDERERS:
-            raise ValueError(f"unknown renderer {renderer!r}; choose from {RENDERERS}")
+            raise ValueError(f"unknown renderer {renderer!r}; choose from {ALL_RENDERERS}")
         rfn = _RAW_RENDERERS[renderer]
         blocks = [rfn(s, True) for s in shots] + [rfn(item, False)]
         # "###" item delimiter: under a bare "\n\n" llama-3.2 blends narrative
@@ -505,6 +588,14 @@ def selftest() -> int:
             check(found == it.mention_order,
                   f"{it.item_id}/{rname}: mention order {found} != {it.mention_order}")
             check(not text.endswith(" "), f"{it.item_id}/{rname}: trailing space")
+        # 3b. the ladder differs from its neighbours in one respect each
+        lines = render_lines(it, False)
+        check(lines.replace("\n", " ") == render_paragraph(it, False),
+              f"{it.item_id}: lines != paragraph up to whitespace")
+        check(re.sub(r"^(SAM|RIVER): ", "", render_screenplay(it, False), flags=re.M) == lines,
+              f"{it.item_id}: screenplay != lines up to the speaker labels")
+        check(render_talk(it, False).count("\n") == render_screenplay(it, False).count("\n"),
+              f"{it.item_id}: talk and screenplay line counts differ")
         msgs = chat_messages(it, False)
         chat_found = pat.findall(" ".join(m["content"] for m in msgs))
         check(chat_found == it.mention_order, f"{it.item_id}/chat: mention order")
@@ -515,7 +606,8 @@ def selftest() -> int:
               f"{it.item_id}/chat: roles do not alternate")
 
         # 4. with_answer renders end with the gold
-        for rfn in (render_narrative, render_screenplay):
+        for rfn in (render_narrative, render_screenplay, render_paragraph, render_lines,
+                    render_story, render_talk):
             check(rfn(it, True).endswith(f" {it.gold}."),
                   f"{it.item_id}: shot render missing gold")
         check(render_code(it, True).endswith(f"# {it.gold}"),
