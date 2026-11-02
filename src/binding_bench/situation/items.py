@@ -115,8 +115,11 @@ PHRASES: dict[str, PhraseSet] = {s.name: s for s in (
     PhraseSet("q_belief", (Phrase("{a} thinks the {o} is in the", frozenset({"belief", "narration"})),
                            Phrase("{a} believes the {o} is in the", frozenset({"belief", "narration"})),
                            Phrase("{a} would look for the {o} in the", frozenset({"belief", "narration"})))),
-    PhraseSet("q_knot_put", (Phrase("The one who put the {o} away was", _S), Phrase("The {o} was put away by", _S),
-                             Phrase("The person who put the {o} there was", _S))),
+    # the put question names the first place: a mover also "puts" the object somewhere, so an unnamed place would
+    # make the question ambiguous; nobody but A ever puts it in the first place
+    PhraseSet("q_knot_put", (Phrase("The one who put the {o} in the {p} was", _S),
+                             Phrase("The {o} was put in the {p} by", _S),
+                             Phrase("The person who put the {o} in the {p} was", _S))),
     PhraseSet("q_knot_move", (Phrase("The one who moved the {o} was", _S), Phrase("The {o} was moved by", _S),
                               Phrase("The person who moved the {o} was", _S))),
     PhraseSet("q_knot_claim", (Phrase("The one who said the {o} was in the {p} was", _S | {"speech"}),
@@ -191,7 +194,7 @@ def build(item_id: str, arm: Arm, rng: random.Random) -> Item:
     ask_a = rng.random() < .5 or arm == "N"
     lead_b = {"U": "q_knot_move", "R": "q_knot_move", "B": "q_knot_move", "D": "q_knot_claim", "L": "q_knot_claim"}
     lead, gold_p = ("q_knot_put", A) if ask_a else (lead_b[arm], B)
-    knot_slots = {"o": obj, "p": p0} if lead == "q_knot_claim" else {"o": obj}
+    knot_slots = {"o": obj, "p": p0} if lead in ("q_knot_claim", "q_knot_put") else {"o": obj}
     probes.append(Probe("knot", lead, gold_p, list(people), knot_slots))
     meta = {"world": st.world, "belief": dict(st.belief), "last_place_mention": st.place_mentions[-1],
             "gold_is_last_place_mention": st.place_mentions[-1] == st.world,

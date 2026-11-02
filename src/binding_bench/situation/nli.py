@@ -25,7 +25,7 @@ from typing import Any, Sequence
 
 from binding_bench.situation.items import N_RENDERINGS, Item, Probe, render_story
 
-KNOT_VERB = {"q_knot_move": "{n} moved the {o}.", "q_knot_put": "{n} put the {o} there.",
+KNOT_VERB = {"q_knot_move": "{n} moved the {o}.", "q_knot_put": "{n} put the {o} in the {p}.",
              "q_knot_claim": "{n} said the {o} was in the {p}."}
 
 

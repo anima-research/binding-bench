@@ -136,3 +136,14 @@ def test_nli_hypotheses_cover_every_candidate(items, tmp_path):
     f = tmp_path / "items.jsonl"
     f.write_text("".join(json.dumps(asdict(i)) + "\n" for i in items[:5]))
     assert [i.item_id for i in nli.load_items(f)] == [i.item_id for i in items[:5]]
+
+
+def test_put_question_names_the_first_place_and_only_a_put_it_there(items):
+    for it in items:
+        k = next(p for p in it.probes if p.kind == "knot")
+        if k.lead != "q_knot_put":
+            continue
+        first = next(e for e in it.events if e["kind"] == "put")
+        assert k.slots["p"] == first["place"] and k.gold == first["actor"]
+        assert not any(e["kind"] in ("put", "move") and e["place"] == first["place"] and e["actor"] != k.gold
+                       for e in it.events)
