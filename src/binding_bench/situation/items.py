@@ -179,20 +179,24 @@ def build(item_id: str, arm: Arm, rng: random.Random) -> Item:
     p0, p1, p2 = rng.sample(places, 3)
     events = _skeleton(arm, A, B, p0, p1, p2, rng)
     st = check_story([A, B], places, events)
+    # who is named first, and the knot candidates' order, are drawn: the gold person is not tied to a position
+    people = rng.sample([A, B], 2)
     probes = [Probe("situation", "q_situation", str(st.world), list(places), {"o": obj})]
-    if arm in ("B", "D"):
+    if arm != "L":                    # L's A has looked, so a belief probe there would ask about what they just saw
         bel = st.belief[A]
-        if bel == st.world:
-            raise AssertionError(f"{item_id}: {arm} must leave A's belief behind the world")
+        if (bel == st.world) != (arm in ("U", "N", "R")):
+            raise AssertionError(f"{item_id}: {arm}: A's belief should {'match' if arm in 'UNR' else 'differ from'} the world")
         probes.append(Probe("belief", "q_belief", str(bel), list(places), {"o": obj, "a": A}))
-    who = {"U": ("q_knot_move", B), "N": ("q_knot_put", A), "R": ("q_knot_move", B), "B": ("q_knot_move", B),
-           "D": ("q_knot_claim", B), "L": ("q_knot_claim", B)}[arm]
-    knot_slots = {"o": obj, "p": p0} if arm in ("D", "L") else {"o": obj}
-    probes.append(Probe("knot", who[0], who[1], [A, B], knot_slots))
+    # the knot probe asks about A (who put it away) or B (who moved it / who said it), alternately
+    ask_a = rng.random() < .5 or arm == "N"
+    lead_b = {"U": "q_knot_move", "R": "q_knot_move", "B": "q_knot_move", "D": "q_knot_claim", "L": "q_knot_claim"}
+    lead, gold_p = ("q_knot_put", A) if ask_a else (lead_b[arm], B)
+    knot_slots = {"o": obj, "p": p0} if lead == "q_knot_claim" else {"o": obj}
+    probes.append(Probe("knot", lead, gold_p, list(people), knot_slots))
     meta = {"world": st.world, "belief": dict(st.belief), "last_place_mention": st.place_mentions[-1],
             "gold_is_last_place_mention": st.place_mentions[-1] == st.world,
-            "n_changes": sum(e.kind in CHANGES for e in events)}
-    return Item(item_id, arm, [A, B], obj, places, [asdict(e) for e in events], probes, meta)
+            "n_changes": sum(e.kind in CHANGES for e in events), "belief_matches_world": st.belief[A] == st.world}
+    return Item(item_id, arm, people, obj, places, [asdict(e) for e in events], probes, meta)
 
 
 # ── rendering ─────────────────────────────────────────────────────────────────────────────────────────────────────────

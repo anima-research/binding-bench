@@ -58,8 +58,23 @@ def test_every_item_passes_the_gate_and_arms_hold(items):
     for i in by["D"]:
         assert {p.kind for p in i.probes} == {"situation", "belief", "knot"}
         assert next(p for p in i.probes if p.kind == "belief").gold != i.meta["world"]
+    for arm in ("U", "N", "R"):
+        assert all(next(p for p in i.probes if p.kind == "belief").gold == i.meta["world"] for i in by[arm])
     for i in by["L"]:
         assert {p.kind for p in i.probes} == {"situation", "knot"}
+
+
+def test_no_position_or_role_rule_finds_the_gold(items):
+    """The pilot's lesson: the knot gold is not tied to the second-named person, and the belief gold is not always the
+    first place the object was put."""
+    knots = [next(p for p in i.probes if p.kind == "knot") for i in items]
+    second = sum(k.gold == k.candidates[1] for k in knots) / len(knots)
+    named_second = sum(next(p for p in i.probes if p.kind == "knot").gold == i.people[1] for i in items) / len(items)
+    assert .3 < second < .7 and .3 < named_second < .7
+    bel = [(i, next(p for p in i.probes if p.kind == "belief")) for i in items if i.arm != "L"]
+    first_put = sum(b.gold == next(e for e in i.events if e["kind"] == "put")["place"] for i, b in bel) / len(bel)
+    world = sum(b.gold == i.meta["world"] for i, b in bel) / len(bel)
+    assert first_put < .85 and .4 < world < .8
 
 
 def test_renderings_differ_only_in_wording(items):
