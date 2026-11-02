@@ -13,7 +13,7 @@ initial values, its query, its candidate layout and its line count; only the U l
                      the STALE candidate.
 
 Templates are fluid F3's: prose ``The bag holds the shell.`` / update ``Then the bag is emptied and the camera is put
-in it.`` / query ``In the end, the bag holds the``; code ``bag = shell`` / ``bag = camera`` / ``assert bag ==``. The
+in it.`` / query ``So the bag holds the`` (v1 and v2: ``In the end, the bag holds the``); code ``bag = shell`` / ``bag = camera`` / ``assert bag ==``. The
 bindings come first, then the U lines, then the query.
 
 Grid: K ∈ {2, 4, 8} × U ∈ {1, 2, 4} × register {prose, code} × 40 base items = 720 base items, 2,160 rows.
@@ -294,7 +294,13 @@ class BaseItem:
         return out + [("update", h, v) for h, v in ups] + gap
 
 
-def render(register: str, events: Sequence[tuple[str, Optional[str], Optional[str]]], q: str) -> str:
+# the prose query lead per version: v3's states no change, since in A and B the queried holder never changes
+PROSE_LEAD: dict[str, str] = {V1: "In the end, the {q} holds the", V2: "In the end, the {q} holds the",
+                              V3: "So the {q} holds the"}
+
+
+def render(register: str, events: Sequence[tuple[str, Optional[str], Optional[str]]], q: str,
+           version: str = VERSION) -> str:
     """The prompt text: fluid F3's sentences (prose) or assignments (code), filler lines, then the query."""
     if register == "prose":
         parts = []
@@ -305,7 +311,7 @@ def render(register: str, events: Sequence[tuple[str, Optional[str], Optional[st
                 parts.append(f"Then the {h} is emptied and the {v} is put in it.")
             else:
                 parts.append(str(h))
-        return " ".join(parts) + f" In the end, the {q} holds the"
+        return " ".join(parts) + " " + PROSE_LEAD[version].format(q=q)
     if register == "code":
         lines = [f"{h} = {v}" if kind != "filler" else str(h) for kind, h, v in events]
         return "\n".join(lines) + f"\nassert {q} =="
@@ -423,7 +429,7 @@ def _row(item: BaseItem, cond: Condition) -> Row:
         roles[w] = role
     if len(set(cands)) != N_CANDIDATES or current[item.q] != gold:
         raise AssertionError(f"{item.base_id} {cond}: candidates {cands} (gold {gold!r})")
-    prompt = render(item.register, events, item.q)
+    prompt = render(item.register, events, item.q, item.version)
     recent = next(v for kind, _, v in reversed(events) if kind != "filler")
     neutral = 1 / item.k if cond == "A" else 0.0 if cond == "B" else 1 / item.u
     row: Row = {
@@ -550,7 +556,7 @@ def _code_lines(r: Mapping[str, Any]) -> list[str]:
 
 
 def _prose_lines(r: Mapping[str, Any]) -> list[str]:
-    body = r["prompt"].rsplit(" In the end, the ", 1)[0]
+    body = re.split(r" (?:In the end, the|So the) \w+ holds the$", r["prompt"], maxsplit=1)[0]
     return [s.strip() + "." for s in body.split(".") if s.strip()]
 
 

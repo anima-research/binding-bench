@@ -117,7 +117,7 @@ def _replay(r: dict[str, Any]) -> tuple[list[tuple[str, Optional[str], Optional[
             out.append(("update" if h in seen else "bind", h, v))
             seen.add(h)
         return out, q.removeprefix("assert ").removesuffix(" ==")
-    body, q = r["prompt"].split(" In the end, the ")
+    body, q = re.split(r" In the end, the | So the ", r["prompt"], maxsplit=1)
     for sent in re.findall(r"[^.]+\.", body):
         if m := re.fullmatch(r"\s*The (\w+) holds the (\w+)\.", sent):
             out.append(("bind", *m.groups()))

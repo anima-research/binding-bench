@@ -15,6 +15,14 @@ Conditions are rendered from that one record:
                  two-valued component such as the query position is shared with
                  the item by exactly 2 of 4, a wider one by at most 2), so they
                  show the task's format without showing where the answer sits.
+                 In a family with paired variants (``meta.variant``), the
+                 exemplars are the item's own variant, and every variant of a
+                 pair gets the same exemplar episodes (the draw is per pair), so a
+                 paired contrast compares items, not exemplar sets. Candidates
+                 every episode of a variant offers (a family's
+                 ``SHARED_CANDIDATES``, e.g. ``me``/``you``) do not count as
+                 overlap. A family's ``SHOT_VARIANT`` names a variant that takes
+                 another's exemplars (answer: ``null`` takes ``qa``'s, as in 3shot).
                  The item's own exemplars share its cell, so in some families
                  (codevar, codevarmut) they teach the answer rule; ``fair`` reads
                  the construct. Needs a :class:`FairPool` of the items scored.
@@ -202,23 +210,75 @@ class FairPool:
 
     def __init__(self, items: Sequence[Item]):
         self.by_family: dict[str, list[tuple[Item, frozenset[str], tuple[Any, ...]]]] = {}
+        # paired families: (family, exemplar pair, variant) -> exemplar; the words of every variant of an
+        # exemplar pair and of an item pair
+        self.sibling: dict[tuple[str, str, str], Item] = {}
+        self.shot_pair_words: dict[tuple[str, str], set[str]] = {}
+        self.item_pair_words: dict[tuple[str, str], set[str]] = {}
         for it in items:
             fam = family(it.family)
+            if _variant(it) is not None:
+                self.item_pair_words.setdefault((it.family, _pair(it)), set()).update(_words(fam, it))
             for s in it.shot_items():
                 self.by_family.setdefault(it.family, []).append((s, frozenset(_words(fam, s)), tuple(s.cell)))
+                if _variant(s) is not None:
+                    self.sibling.setdefault((it.family, _pair(s), str(_variant(s))), s)
+                    self.shot_pair_words.setdefault((it.family, _pair(s)), set()).update(_words(fam, s))
         self.values: dict[str, list[set[Any]]] = {}
         for f, entries in self.by_family.items():
             n = len(entries[0][2])
             self.values[f] = [{c[j] for _, _, c in entries} for j in range(n)]
 
 
+def _variant(it: Item) -> Optional[str]:
+    v = it.meta.get("variant")
+    return None if v is None else str(v)
+
+
+def _pair(it: Item) -> str:
+    return str(it.meta.get("pair_id") or it.item_id)
+
+
 def _words(fam: FamilyModule, it: Item) -> set[str]:
-    return set(fam.labels(it)) | _objects(it) | set(it.candidates)
+    shared = set(getattr(fam, "SHARED_CANDIDATES", ()))
+    return set(fam.labels(it)) | _objects(it) | (set(it.candidates) - shared)
+
+
+def _balanced(pick: Sequence[tuple[Item, tuple[Any, ...]]], cell: tuple[Any, ...], values: list[set[Any]],
+              k: int) -> bool:
+    for j, vals in enumerate(values):
+        if len(vals) < 2:
+            continue
+        m = sum(c[j] == cell[j] for _, c in pick)
+        if (len(vals) == 2 and m != k // 2) or m > k // 2:
+            return False
+    return True
+
+
+def _fair_paired(item: Item, pool: FairPool, k: int, tries: int) -> list[Item]:
+    """The paired-variant draw: exemplar pairs disjoint from every variant of the item's pair, drawn once per pair,
+    each rendered in the item's variant."""
+    f, pid = item.family, _pair(item)
+    v = getattr(family(f), "SHOT_VARIANT", {}).get(str(_variant(item)), str(_variant(item)))
+    used = pool.item_pair_words.get((f, pid), set())
+    pairs = sorted({p for (ff, p, vv) in pool.sibling if ff == f and vv == v})
+    cand = [(pool.sibling[(f, p, v)], tuple(pool.sibling[(f, p, v)].cell)) for p in pairs
+            if not (pool.shot_pair_words[(f, p)] & used)]
+    if len(cand) < k:
+        raise ValueError(f"{item.item_id}: only {len(cand)} disjoint {v} exemplars in the pool")
+    rng = random.Random(f"fair:{pid}")
+    for _ in range(tries):
+        pick = rng.sample(cand, k)
+        if _balanced(pick, tuple(item.cell), pool.values[f], k):
+            return [s for s, _ in pick]
+    raise ValueError(f"{item.item_id}: no balanced {k}-exemplar set in {tries} draws")
 
 
 def fair_shots(item: Item, pool: FairPool, k: int = FAIR_SHOTS, tries: int = 4000) -> list[Item]:
     """``k`` exemplars balanced on every cell component of ``item`` (see the module docstring), with labels, objects and
     candidates disjoint from the item's; deterministic per item id."""
+    if _variant(item) is not None:
+        return _fair_paired(item, pool, k, tries)
     fam = family(item.family)
     entries = pool.by_family.get(item.family, [])
     used = _words(fam, item)

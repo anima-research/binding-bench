@@ -70,20 +70,20 @@ def test_give_chain_and_exact_render_p3():
     assert deixis.render(third, False) == (
         "Ada, Ken and Rosa are sitting at a table. Ada has the lamp. Ken has the cup. "
         "Rosa has the bell. Ken gives the cup to Rosa. Rosa gives the bell to Ada. "
-        "Ada gives the lamp to Ken. Now Rosa is holding the")
+        "Ada gives the lamp to Ken. Right now Rosa is holding the")
     assert deixis.render(third, True).endswith("holding the cup.") and third.gold == "cup"
     assert third.mention_order == it.mention_order
     own = _build(_spec(P3, OBJS3, P3_EVENTS, {"kind": "owner", "obj": "bell"}), (3, 3, "owner"))
     assert own.gold == "Ada" and own.candidates == P3
-    assert deixis.render(own, False).endswith("Ken, I'm giving you my lamp.\nNow the bell is with")
+    assert deixis.render(own, False).endswith("Ken, I'm giving you my lamp.\nSo the bell is with")
     third_own = deixis.build("t1", (3, 3, "owner"), deixis.to_third(own.spec))
-    assert deixis.render(third_own, False).endswith("to Ken. Now the bell is with")
+    assert deixis.render(third_own, False).endswith("to Ken. So the bell is with")
     adr = _build(_spec(P3, OBJS3, P3_EVENTS, {"kind": "addressee", "speaker": "Ada", "voc": "Ken"}),
                  (3, 3, "addressee"))
     assert adr.gold == "lamp"
     assert deixis.render(adr, False).endswith("\nAda: Ken, right now you're holding the")
     assert deixis.render(deixis.build("t2", (3, 3, "addressee"), deixis.to_third(adr.spec)),
-                         False).endswith("Now Ken is holding the")
+                         False).endswith("Right now Ken is holding the")
 
 
 def test_give_forms_p2_render():
@@ -160,7 +160,7 @@ def test_addressee_resolution_and_ambiguity():
         for a, b in (("Here, Rosa, take", "Here, take"),        # imperative, no vocative
                      ("Rosa: Ada, my bell", "Rosa: My bell"),  # "your" without a vocative
                      ("Ken, I'm giving", "Ada, I'm giving"),   # vocative = the speaker
-                     ("Now the cup is with", "(Now the cup is with")):   # parentheses
+                     ("So the cup is with", "(So the cup is with")):   # parentheses
             deixis.render = functools.partial(_replaced, orig, a, b)
             with pytest.raises(ValueError):
                 deixis.check_surface(broken)
@@ -258,8 +258,8 @@ def test_control_wording(dx):
         assert not deixis._PRONOUNS.search(text)
         assert re.search(r"\. \w+ gives the \w+ to \w+\. ", text)
         q = it.spec["query"]
-        lead = (f"Now the {q['obj']} is with" if q["kind"] == "owner"
-                else f"Now {q['person']} is holding the")
+        lead = (f"So the {q['obj']} is with" if q["kind"] == "owner"
+                else f"Right now {q['person']} is holding the")
         assert text.endswith(". " + lead)
 
 

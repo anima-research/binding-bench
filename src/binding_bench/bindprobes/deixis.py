@@ -10,7 +10,7 @@ speaker-relative reference::
     Rosa: I have the bell.
     Ken: Here, Rosa, take my cup.
     Rosa: Ada, my bell is in your hand now.
-    Now the cup is with
+    So the cup is with
     -> " Rosa"
 
 Design: declarations + GIVE only, ≥ 3 candidates, a dialogue-worded third-person
@@ -41,7 +41,7 @@ give hands an object straight back: the give after "A gives o to B" is never "B
 gives o to A" (:func:`gives_back`). Objects agree with "is" (``pools.singular``).
 
 Queries (the completion ends right before the scored single token, closer ``.``):
-  owner      ``Now the o is with``            -> a name; P = 3 ONLY (3 candidates).
+  owner      ``So the o is with``              -> a name; P = 3 ONLY (3 candidates).
              Same line in every variant. E ≥ 2: the queried object has moved and
              is not in the last line. E = 1: the recency slot (1/3) queries the
              given object; the other 2/3 query an object that stayed with its
@@ -59,7 +59,7 @@ Paired variants — every base item ``x`` is emitted as linked variants
   third    the same events as dialogue-family prose with names, one paragraph, no
            pronouns, no parentheses: ``Ada, Ken and Rosa are sitting at a table. Ada
            has the lamp. Ken has the cup and the bell. Ken gives the cup to Rosa.
-           Now Rosa is holding the`` (owner: ``Now the cup is with``). Same gold,
+           Right now Rosa is holding the`` (owner: ``So the cup is with``). Same gold,
            candidates and object-mention order as ``x``.
   twin     P = 3 only. The same skeleton under a transposition sigma of two
            speakers (the third unchanged): every utterance spoken by a in ``x`` is
@@ -122,7 +122,7 @@ from binding_bench.bindprobes.base import (Cell, Item, cell_key, for_version, na
 from binding_bench.bindprobes.pools import PLURAL_FORM, Pools, singular
 
 FAMILY = "deixis"
-VERSION = 3                       # meta.deixis_version; items' id/seed tag "deixis-v3"
+VERSION = 4                       # meta.deixis_version; items' id/seed tag "deixis-v4"
 PS = (2, 3)
 ES = (1, 2, 3)
 QKINDS = ("owner", "self", "addressee")
@@ -135,6 +135,7 @@ PILOT_PER_CELL = 10               # pilot battery: --per-cell deixis=10 (150 bas
 LITE_PER_CELL = 10                # lite slice: 10 base items (+ variants) per cell
 SEPARATOR = "\n\n* * *\n\n"
 VARIANTS = ("deictic", "third", "twin")
+SHOT_VARIANT: dict[str, str] = {"twin": "deictic"}   # twin shares the deictic exemplars
 ERROR_TYPES = ("speaker_confusion", "previous_owner", "other_participant", "other_object")
 MAX_PROMPT_TOKENS = 1024          # prompts < 1024 tokens (checked with the tokenizer)
 MIN_CANDIDATES = 3                # chance ≤ 1/3
@@ -362,7 +363,10 @@ OWNING_GIVE_FORMS: dict[str, tuple[str, str]] = {
 Wording = tuple[dict[str, str], dict[str, tuple[str, str]]]
 WORDINGS: dict[str, Wording] = {"holding": (DECLARE_FORMS, GIVE_FORMS),
                                 "owning": (OWNING_DECLARE_FORMS, OWNING_GIVE_FORMS)}
-WORDING: dict[int, str] = {2: "owning", 3: "holding"}    # deixis version -> wording
+WORDING: dict[int, str] = {2: "owning", 3: "holding", 4: "holding"}    # deixis version -> wording
+# deixis version -> the query leads that state no change (generation 4 on): the owner query and the third
+# variant's queries read the same whether or not the queried thing moved
+NEUTRAL_LEADS: dict[int, bool] = {2: False, 3: False, 4: True}
 
 
 def gives_back(prev: Optional[Mapping[str, Any]], giver: str, recipient: str, obj: str) -> bool:
@@ -422,18 +426,19 @@ def _third_sentences(events: Sequence[Mapping[str, Any]]) -> list[Segment]:
     return out
 
 
-def _lead(spec: Spec) -> Segment:
+def _lead(spec: Spec, neutral: bool) -> Segment:
     """The query lead-in (the closer after the answer is always ``.``)."""
     q = spec["query"]
     if q["kind"] == "owner":
-        return _fill("Now the {o} is with", o=q["obj"])
+        return _fill("So the {o} is with" if neutral else "Now the {o} is with", o=q["obj"])
     form = q.get("form", "a")
     if form not in QFORMS:
         raise ValueError(f"unknown query form {form!r}")
     if spec["variant"] == "third":
         if form == "b":
-            return _fill("Now the thing in {p}'s hand is the", p=q["person"])
-        return _fill("Now {p} is holding the", p=q["person"])
+            return _fill("The thing in {p}'s hand right now is the" if neutral
+                         else "Now the thing in {p}'s hand is the", p=q["person"])
+        return _fill("Right now {p} is holding the" if neutral else "Now {p} is holding the", p=q["person"])
     if q["kind"] == "self":
         if form == "b":
             return _fill("{s}: The thing in my hand right now is the", s=q["speaker"])
@@ -447,7 +452,7 @@ def _lead(spec: Spec) -> Segment:
     return _fill("{s}: Right now you're holding the", s=q["speaker"])
 
 
-def _segments(spec: Spec, wording: str) -> tuple[list[Segment], str]:
+def _segments(spec: Spec, wording: str, neutral: bool) -> tuple[list[Segment], str]:
     """(scene + body + lead segments, the joiner): chat lines for deictic/twin, one
     prose paragraph for third."""
     people = spec["people"]
@@ -456,15 +461,16 @@ def _segments(spec: Spec, wording: str) -> tuple[list[Segment], str]:
     if spec["variant"] == "third":
         segs = [_fill(slots + " are sitting at a table.", **names)]
         segs += _third_sentences(spec["events"])
-        return segs + [_lead(spec)], " "
+        return segs + [_lead(spec, neutral)], " "
     segs = [_fill("A chat between " + slots + ".", **names)]
     segs += [_deictic_line(ev, wording) for ev in spec["events"]]
-    return segs + [_lead(spec)], "\n"
+    return segs + [_lead(spec, neutral)], "\n"
 
 
 def _rendered(spec: Spec, version: int = VERSION) -> tuple[str, list[str]]:
     """(text without the answer, slot values in text order), in generation ``version``'s wording."""
-    segs, joiner = _segments(spec, for_version(WORDING, version, FAMILY))
+    segs, joiner = _segments(spec, for_version(WORDING, version, FAMILY),
+                             for_version(NEUTRAL_LEADS, version, FAMILY))
     return joiner.join(t for t, _ in segs), [s for _, ss in segs for s in ss]
 
 
@@ -495,7 +501,7 @@ def check_surface(item: Item) -> None:
         return
     body = text.split("\n")[1:]
     if spec["query"]["kind"] == "owner":
-        if not body or not body[-1].startswith("Now the "):
+        if not body or not body[-1].startswith(("So the ", "Now the ")):
             raise ValueError(f"{item.item_id}: owner query is not the narrator line")
         body = body[:-1]
     for ln in body:

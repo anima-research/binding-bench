@@ -4,7 +4,7 @@ Each one reproduces its pinned file byte for byte (``tests/test_stagegauges.py``
 
 * :func:`joinlite_rows` (joinlite-v1) — a JOIN ruler with the lookup hop made trivial. Ownership is stated once, in
   narration, with no transfers, so the only thing left to fail is the I / you → name translation. Each scene is
-  queried as ``third`` (``Now X is holding the``: the lookup alone), ``self`` (``S: Right now I'm holding the``) and
+  queried as ``third`` (``Right now X is holding the``: the lookup alone), ``self`` (``S: Right now I'm holding the``) and
   ``addressee`` (P2 ``S: Right now you're holding the``; P3 with a vocative), and the self and P2 addressee queries
   also run with the query speaker swapped, which flips the gold. Candidates are every object in the scene, including
   the table object; the addressee target's object cycles through the scene sentence's slots across scenes, so "gold
@@ -43,9 +43,9 @@ FILLERS = ("It is getting late.", "The coffee here is good.", "That was a long m
 
 def _scene_sentence(holders: list[tuple[str, str]], table: str, rng: random.Random, gold_pos: int,
                     gold_obj: str) -> tuple[str, list[str]]:
-    """'Kevin has the cup, Neil has the lamp, and a spoon is on the table.' with ``gold_obj`` at slot ``gold_pos``;
-    returns the sentence and the object mention order."""
-    parts = [(f"{n} has the {o}", o) for n, o in holders] + [(f"a {table} is on the table", table)]
+    """'Kevin has the cup, Neil has the lamp, and the spoon is on the table.' with ``gold_obj`` at slot ``gold_pos``;
+    returns the sentence and the object mention order. Every object takes "the", so no noun needs an indefinite."""
+    parts = [(f"{n} has the {o}", o) for n, o in holders] + [(f"the {table} is on the table", table)]
     others = [p for p in parts if p[1] != gold_obj]
     rng.shuffle(others)
     g = next(p for p in parts if p[1] == gold_obj)
@@ -95,7 +95,7 @@ def joinlite_rows(seed: int = JOINLITE_SEED, scenes: int = JOINLITE_SCENES, verb
 
         v3, vi, vy = (("is holding", "I'm holding", "you're holding") if verb == "holding"
                       else ("has", "I have", "you have"))
-        emit("third", "orig", f"Now {other} {v3} the", other)
+        emit("third", "orig", f"Right now {other} {v3} the", other)
         emit("self", "orig", f"{spk}: Right now {vi} the", spk)
         emit("self", "swap", f"{other}: Right now {vi} the", other)
         if P == 2:
@@ -103,7 +103,7 @@ def joinlite_rows(seed: int = JOINLITE_SEED, scenes: int = JOINLITE_SCENES, verb
             emit("addressee", "swap", f"{other}: Right now {vy} the", spk)
         else:
             emit("addressee", "orig", f"{spk}: {other}, right now {vy} the", other)
-            emit("third", "orig3", f"Now {third_p} {v3} the", third_p)
+            emit("third", "orig3", f"Right now {third_p} {v3} the", third_p)
     return rows
 
 

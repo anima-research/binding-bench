@@ -275,6 +275,37 @@ def test_chat_wordings_per_generation():
         deixis._deictic_line(own, "holding")
     give = {"ev": "give", "speaker": "Ada", "voc": "Ken", "obj": "cup", "form": "yours"}
     assert deixis._deictic_line(give, "owning")[0] == "Ada: Ken, my cup is yours now."
-    assert deixis.WORDING == {2: "owning", 3: "holding"} and answer.WORDING == {2: "owning", 3: "holding"}
+    assert deixis.WORDING == {2: "owning", 3: "holding", 4: "holding"} and answer.WORDING == deixis.WORDING
+    assert deixis.NEUTRAL_LEADS == {2: False, 3: False, 4: True}
+    assert answer.QUERY_WORDING[4] == ("Quick check: who has the {o}?", "So the {o} is with")
     assert adjacency.WORDING[1][0] == "owning" and "yours" in adjacency.WORDING[1][1]
     assert pools.letter_article("hour") == "a" and pools.indefinite("hour") == "an"
+
+
+def test_current_query_leads_state_no_change(gen):
+    """The current generation's deixis owner / third leads and answer's question and narrator lead read the same
+    whether or not the queried object moved: no "now" outside the deictic "right now"."""
+    for f in ("deixis", "answer"):
+        for it in gen[f]:
+            tail = items.family(f).render(it, False)[-200:]
+            last = tail.split("\n")[-1]
+            assert not re.search(r"(?<!right )\bnow\b", last, flags=re.I), (it.item_id, last)
+            if f == "answer" and it.meta["variant"] != "narr":
+                assert "Quick check: who has the " in tail
+
+
+def test_fair_exemplars_match_the_variant_and_the_pair():
+    """Paired families: every fair exemplar is the item's (shot) variant, and every variant of a pair gets the same
+    exemplar episodes."""
+    for f, n in (("answer", 8), ("adjacency", 6), ("deixis", 4)):
+        its = items.generate_family(f, SPLIT, n, seed=5)
+        pool = items.FairPool(its)
+        shot_variant = getattr(items.family(f), "SHOT_VARIANT", {})
+        by: dict[str, set[tuple[str, ...]]] = {}
+        for it in its:
+            shots = items.fair_shots(it, pool)
+            v = it.meta["variant"]
+            assert all(s.meta["variant"] == shot_variant.get(v, v) for s in shots), it.item_id
+            assert not {w for s in shots for w in items._words(items.family(f), s)} & items._words(items.family(f), it)
+            by.setdefault(str(it.meta["pair_id"]), set()).add(tuple(str(s.meta["pair_id"]) for s in shots))
+        assert all(len(v) == 1 for v in by.values()), f

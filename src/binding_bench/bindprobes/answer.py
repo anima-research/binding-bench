@@ -9,7 +9,7 @@ holder AS THEY WOULD SAY IT::
     Ana: I have the cup.
     Cal: The lamp is in my hand.
     Ana: Here, Ben, take my cup.
-    Dee: Who has the cup now?
+    Dee: Quick check: who has the cup?
     Ben: I think it's with
     -> " me"      (holder = the answerer)   / " you" (= the asker) / " Cal" (anyone else)
 
@@ -18,7 +18,7 @@ Cell = (E, channel): E ∈ {1, 2} gives; channel = how the answer's "you" is anc
   voc    ``Ben: Dee, I think it's with``  — a vocative names the asker
 Paired variants of every base item (``meta.pair_id``):
   qa     the above; candidates [me, you, X, Y] (X, Y = the two others, scene order)
-  narr   the same body + the narrator query ``Now the cup is with`` -> the holder's name
+  narr   the same body + the narrator query ``So the cup is with`` -> the holder's name
          (candidates = the 4 names) — the lite/form-a query, i.e. the seam test partner
   third  the same events as dialogue-family prose with names (no pronouns), then the
          same Q-A tail -> the same gold as qa
@@ -54,8 +54,8 @@ from binding_bench.bindprobes.base import Cell, Item, for_version, name_list, re
 from binding_bench.bindprobes.pools import PLURAL_FORM, singular
 
 FAMILY = "answer"
-VERSION = 3                       # null calibration variant; holding words; asker rule
-WORDING: dict[int, str] = {2: "owning", 3: "holding"}    # version -> deixis.WORDINGS key
+VERSION = 4                       # quiz question; neutral narrator lead (3: null calibration, holding, asker rule)
+WORDING: dict[int, str] = {2: "owning", 3: "holding", 4: "holding"}    # version -> deixis.WORDINGS key
 ES = (1, 2)
 CHANNELS = ("novoc", "voc")
 CELLS: list[Cell] = [(e, ch) for e in ES for ch in CHANNELS]
@@ -65,6 +65,8 @@ VARIANTS = ("qa", "narr", "third", "null")
 N_PEOPLE = 4
 N_OBJECTS = (3, 4)
 ME, YOU = "me", "you"
+SHARED_CANDIDATES: tuple[str, ...] = (ME, YOU)   # in every qa / null episode: not overlap for ``fair``
+SHOT_VARIANT: dict[str, str] = {"null": "qa"}     # null calibrates qa: the same exemplars
 # cycled: each constant answer at chance; otherA/otherB = the holder is the first/second
 # of the two other people in scene order (= candidate slot 3/4)
 ROLES = ("me", "you", "otherA", "otherB")
@@ -72,7 +74,11 @@ RECENCY = ("recipient", "speaker", "neither", "neither")
 ERROR_TYPES = ("perspective_flip", "name_for_deixis", "deixis_for_name", "previous_owner", "other")
 MAX_PROMPT_TOKENS = 1024
 BALANCE_TOL = 0.05
-QUESTION = "Who has the {o} now?"
+# version -> (the question, the narrator lead). From generation 4 the question is a quiz, so an asker who holds the
+# object still asks felicitously, and neither states a change
+QUERY_WORDING: dict[int, tuple[str, str]] = {2: ("Who has the {o} now?", "Now the {o} is with"),
+                                             3: ("Who has the {o} now?", "Now the {o} is with"),
+                                             4: ("Quick check: who has the {o}?", "So the {o} is with")}
 ANSWER_LEAD = "I think it's with"
 
 
@@ -186,9 +192,9 @@ def candidates(spec: Spec) -> list[str]:
 
 # ── Rendering ──────────────────────────────────────────────────────────────────
 
-def _tail_lines(spec: Spec) -> list[str]:
+def _tail_lines(spec: Spec, version: int) -> list[str]:
     t = spec["tail"]
-    q = f"{t['asker']}: " + QUESTION.format(o=t["obj"])
+    q = f"{t['asker']}: " + for_version(QUERY_WORDING, version, FAMILY)[0].format(o=t["obj"])
     lead = f"{t['answerer']}: " + (f"{t['asker']}, " if t["channel"] == "voc" else "") + ANSWER_LEAD
     return [q, lead]
 
@@ -200,15 +206,15 @@ def _rendered(spec: Spec, version: int = VERSION) -> str:
     if spec["variant"] == "third":
         prose = [f"{name_list(people)} are sitting at a table."]
         prose += [t for t, _ in dx._third_sentences(spec["events"])]
-        return " ".join(prose) + "\n" + "\n".join(_tail_lines(spec))
+        return " ".join(prose) + "\n" + "\n".join(_tail_lines(spec, version))
     lines = [f"A chat between {name_list(people)}."]
     lines += [dx._deictic_line(ev, wording)[0] for ev in spec["events"]]
     if spec["variant"] == "null":
-        return "\n".join([lines[0]] + _tail_lines(spec))
+        return "\n".join([lines[0]] + _tail_lines(spec, version))
     if spec["variant"] == "narr":
-        lines.append(f"Now the {spec['tail']['obj']} is with")
+        lines.append(for_version(QUERY_WORDING, version, FAMILY)[1].format(o=spec["tail"]["obj"]))
     else:
-        lines += _tail_lines(spec)
+        lines += _tail_lines(spec, version)
     return "\n".join(lines)
 
 
@@ -252,7 +258,7 @@ def check_surface(item: Item) -> None:
         if (dx._YOU.search(utt) or dx._IMPERATIVE.match(rest)) and \
                 (not v or v.group(1) not in spec["people"] or v.group(1) == spk):
             raise ValueError(f"{item.item_id}: addressed line without a valid vocative: {ln!r}")
-    if dx._YOU.search(QUESTION):
+    if any(dx._YOU.search(q) for q, _ in QUERY_WORDING.values()):
         raise ValueError("the question must not contain 'you'")
 
 
