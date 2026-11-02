@@ -117,6 +117,34 @@ BATTERIES: dict[str, Battery] = {b.name: b for b in (
             render_sha256="454076829819f0a846917863a80b9bf5eed8e79f62944c583130f6e36e8336dc"),
 )}
 
+@dataclass(frozen=True)
+class Pin:
+    """Bytes a battery name was pinned to: its file under the prompts dir, sha256 and (bindprobes) render digest."""
+    file: str
+    sha256: str
+    render_sha256: Optional[str] = None
+
+
+# Every earlier pin of a battery whose bytes were upgraded in place under the same name, oldest first. A number
+# recorded against one of these names before the upgrade resolves here to its exact file; the file stays at its path.
+PREVIOUS_PINS: dict[str, tuple[Pin, ...]] = {
+    "joinlite-v1": (Pin("joinlite-v1.jsonl", "1e20c12961803a8a459b302d7ece30c34c7d4535f871330dba51020699facb90", None),),
+    "swapdyn-v1": (Pin("swapdyn-v1.jsonl", "8ddab1262a2fa340e559fbbcd966b2c20a2acdfade2bb888e55034851810bdd3", None),),
+    "stage5-decomp-v1": (Pin("stage5-decomp-v1.jsonl", "c08b40150b84e3e2e6d5e9918a8b7c6b5986230545f730b06b1cd2d8bc3db666", None),),
+    "stage5-decomp-core": (Pin("stage5-decomp-core.jsonl", "f653040de69157ef6edb75e4702e00473ce229bc0e25dfe8cdc457a09ac3727e", None),),
+    "frame-ladder-v1": (Pin("frame-ladder-v1.jsonl", "ba60a0789e74a131351780e87012d74ad0e13eb5a91c537b4849749707f8efba", None),),
+    "fluid-v1-morph": (Pin("fluid-v1-morph.jsonl", "ec73660da59ba0893f5a65c6a7675105b1dbcc7c17166da255c9f2c6ccfaa341", None),),
+    "fluid-v2-algebra": (Pin("fluid-v2-algebra.jsonl", "7b5bc3983583b6a87e6e26c9771f10d51ed38174c1eacc953e8ca8048cf45add", None),),
+    "fluid-v1-seqind": (Pin("fluid-v1-seqind.jsonl", "b2a1e6b54040500363909cf4d669f84ef968a60df6353127599e9f041a46e15a", None),),
+    "cryst-v1": (Pin("cryst-v1.jsonl", "e73e55699384eab1665b0dc7501a5f96f3ab793aeeca475bdc8089946783e5a2", None),),
+    "formupdate-v3": (Pin("formupdate-v3.jsonl", "5cb5f48f34f10746c5c4427c15a8b4190c0b775018cbc2da681054cd89b4be87", None),),
+    "bp-deixis-lite": (Pin("bindprobes-deixis-lite/items.jsonl", "229e7ac377ff2ec5ef298ecdee5c27667f9c97d86ba2337fb5e411aac9167c3e", '71fd836f43ed7732a17d70c738d4bacba7f6ae74b56692e438f45fe6eda4111a'),),
+    "bp-profile": (Pin("bindprobes-items/items.jsonl", "7bfab8bff499667846fd9c9522cfbb4147476626bdd37bb7d702a2f55f4f9776", '58e1b17bf606dcfa6bcb336b86c4aca205bc546e550f5b92c65481da7818421b'),),
+    "bp-v3.2": (Pin("bindprobes-v3.2/items.jsonl", "ee5e827bd4698623e96b906480a8652999c7d8884d69f783e29b072d8cfc13e5", '1d12e4f3a8702379aceef5b18593e8f10850054c4e27081dda73e62dd8abca3b'),),
+    "bp-deixis-v2": (Pin("bindprobes-deixis-v2-full/items.jsonl", "08151e66c4798288c7b1f471aaeb46d07e3d21acd5d279e8d8c137ba3bd35234", '2b3330a1c32ac92e8c3bbba8e4a8d50b1d8d3ca999c837347fbe95ae763c2345'),),
+}
+
+
 # Named sets for the CLI: `--batteries gauges,capacity` etc.
 GROUPS: dict[str, tuple[str, ...]] = {
     "gauges": ("joinlite-v1", "swapdyn-v1"),

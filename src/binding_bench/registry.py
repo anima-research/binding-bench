@@ -271,7 +271,8 @@ def evals_for(battery: str) -> list[Eval]:
 # The stages (the Binding Atlas): 1 static I binds; 2 "you" reads as the speaker (you = me); 3 static "you" binds;
 # 4 "you" collapses back onto the speaker once objects change hands; 5 dynamic "you" binds. A stage is a swap-shift
 # verdict on a gauge (above +.02 binds, below -.02 inverts). Roles:
-#   gauge       the stage is defined by this battery's swap shift
+#   gauge       the stage is defined by this battery's swap shift. Stage 2 is not gauged on its own: it is the
+#               static-you reading below -.02, the precursor of stage 3 on the same gauge
 #   diagnostic  takes a stage apart (which part of the input carries it); does not move the stage verdict
 #   supporting  the same construct as a stage, read as accuracy (Atlas columns); not a stage verdict
 # A battery absent from STAGE_MAP touches no stage.
@@ -287,8 +288,8 @@ class StageUse:
 
 STAGE_MAP: tuple[StageUse, ...] = (
     StageUse("joinlite-v1", (1,), "gauge", "static I: self query, speaker swap (qkind self, arm swap vs orig)"),
-    StageUse("joinlite-v1", (2, 3), "gauge", "static you: P2 addressee query, speaker swap (below -.02 = stage 2, "
-                                               "above +.02 = stage 3)"),
+    StageUse("joinlite-v1", (2, 3), "gauge", "static you = the P2 addressee query, speaker swap (above +.02 = "
+                                               "stage 3; below -.02 = stage 2, read only as stage 3's precursor)"),
     StageUse("swapdyn-v1", (4, 5), "gauge", "dynamic you after transfers, speaker swap, 0shot (below -.02 = stage 4, "
                                               "above +.02 = stage 5) and 3shot"),
     StageUse("stage5-decomp-v1", (5,), "diagnostic", "the swapdyn items rewritten along one axis each"),
