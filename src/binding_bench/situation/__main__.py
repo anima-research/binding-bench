@@ -2,6 +2,7 @@
 
     python -m binding_bench.situation gen --out DIR [--per-arm 100] [--seed 1103]
     python -m binding_bench.situation check-tokens [--tokenizers smollm2,pythia]
+    python -m binding_bench.situation nli --items DIR/items.jsonl --model NLI_MODEL --out REPORT_JSON
 """
 
 from __future__ import annotations
@@ -24,7 +25,18 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--seed", type=int, default=items.DEFAULT_SEED)
     t = sub.add_parser("check-tokens", help="scored words that are not one token in a grid tokenizer")
     t.add_argument("--tokenizers", default="")
+    n = sub.add_parser("nli", help="the entailment screen over an items file")
+    n.add_argument("--items", required=True)
+    n.add_argument("--model", required=True)
+    n.add_argument("--out", required=True)
+    n.add_argument("--margin", type=float, default=0.2)
     a = ap.parse_args(argv)
+    if a.cmd == "nli":
+        from binding_bench.situation import nli
+        rep = nli.screen(nli.load_items(Path(a.items)), a.model, a.margin)
+        nli.write(rep, Path(a.out))
+        print(json.dumps(rep["summary"], indent=1))
+        return 0
     if a.cmd == "gen":
         print(items.emit(Path(a.out), a.per_arm, a.seed))
         return 0

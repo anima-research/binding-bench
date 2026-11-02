@@ -104,3 +104,17 @@ def test_transcript_rendering_and_fair_rows(items):
         assert len(shots) == si.FAIR_K
         words = {w for sh in shots for w in re.findall(r"[A-Za-z]+", sh)}
         assert not words & set(it.people + [it.obj] + it.places), iid
+
+
+def test_nli_hypotheses_cover_every_candidate(items, tmp_path):
+    import json
+    from dataclasses import asdict
+
+    from binding_bench.situation import nli
+    for it in items[:10]:
+        for pr in it.probes:
+            hs = nli.hypotheses(it, pr)
+            assert len(hs) == len(pr.candidates) and all(c in h for c, h in zip(pr.candidates, hs))
+    f = tmp_path / "items.jsonl"
+    f.write_text("".join(json.dumps(asdict(i)) + "\n" for i in items[:5]))
+    assert [i.item_id for i in nli.load_items(f)] == [i.item_id for i in items[:5]]
