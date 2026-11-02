@@ -8,6 +8,7 @@ import os
 import importlib.util
 import json
 import random
+import re
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -83,7 +84,30 @@ def test_banked_pool_reproduces_banked_artifacts(tmp_path, capsys):
         {k: v for k, v in meta.items() if k != "names_file"}
 
 
-def test_prompts_byte_identical_to_frozen():
+_MOVE = re.compile(r"moved into (?:the empty )?Box (\w)(?:, replacing (?:whatever|what) was there)?\.")
+
+
+def _documented_rewrites(text: str) -> str:
+    """The frozen renders' text with the two documented wording changes undone: the neutral query lead, and the move
+    sentence's ending."""
+    text = re.sub(r"(?<!So) Box (\w) now contains the", r" So Box \1 contains the", text)
+    text = text.replace(" now contains the", " contains the")
+    return _MOVE.sub(r"moved into Box \1.", text)
+
+
+def _normalized(built: Any) -> Any:
+    if isinstance(built, str):
+        return _documented_rewrites(built)
+    if isinstance(built, list):
+        return [_normalized(x) for x in built]
+    if isinstance(built, dict):
+        return {k: _normalized(v) for k, v in built.items()}
+    return built
+
+
+def test_prompts_match_frozen_up_to_documented_rewrites():
+    """code is byte-identical to the frozen instrument; the prose registers differ from it only by the neutral lead and
+    the move wording."""
     frozen = _frozen_gen_items()
     pool = list(items.BANKED_VERIFIED_NAMES)
     its, shots = items.generate(pool, 3, 5, 1002)
@@ -93,11 +117,13 @@ def test_prompts_byte_identical_to_frozen():
         for rd in items.RENDERERS:
             for ns in (0, 3):
                 for fam in ("raw", "chatml", "hf-chat"):
-                    assert items.build_prompt(it, rd, shots[:ns], fam) == \
-                        frozen.build_prompt(f_it, rd, f_shots[:ns], fam)
-        msgs = items.chat_messages(it, False)
-        for open_final in (True, False):
-            assert items.chatml_render(msgs, open_final) == frozen.chatml_render(msgs, open_final)
+                    ours = items.build_prompt(it, rd, shots[:ns], fam)
+                    theirs = frozen.build_prompt(f_it, rd, f_shots[:ns], fam)
+                    if rd == "code":
+                        assert ours == theirs
+                    else:
+                        assert ours != theirs or ns == 0 and it.tier == "d0"
+                        assert _normalized(ours) == _normalized(theirs)
 
 
 def test_grid_tokenizers_and_selftest(capsys):
@@ -107,28 +133,46 @@ def test_grid_tokenizers_and_selftest(capsys):
 
 def test_format_ladder_renderers():
     """Each ladder renderer keeps the item (gold, candidates, mention order) and differs from its neighbour as
-    documented; the banked four stay the default set."""
-    import re
+    documented; every lead is neutral; the banked four stay the default set."""
     its, shots = items.generate(list(items.BANKED_VERIFIED_NAMES), 4, 3, items.DEFAULT_SEED)
     assert items.RENDERERS == ("code", "narrative", "screenplay", "chat")
     assert not set(items.LADDER_RENDERERS) & set(items.RENDERERS)
     pat = re.compile(r"\b(" + "|".join(map(re.escape, items.BANKED_VERIFIED_NAMES)) + r")\b")
     for it in its:
-        para, lines = items.render_paragraph(it, False), items.render_lines(it, False)
-        assert lines.replace("\n", " ") == para
+        lines = items.render_lines(it, False)
+        assert lines.replace("\n", " ") == items.render_narrative(it, False)
         assert re.sub(r"^(SAM|RIVER): ", "", items.render_screenplay(it, False), flags=re.M) == lines
-        assert para == items.render_narrative(it, False).replace(f" Box {it.query_box} now", f" So Box {it.query_box} now")
         talk = items.render_talk(it, False)
         assert [ln.split(":")[0] for ln in talk.split("\n")] == \
             [ln.split(":")[0] for ln in items.render_screenplay(it, False).split("\n")]
-        for rd in items.LADDER_RENDERERS:
-            text = items.build_prompt(it, rd, [], "raw")["prompt"]
+        for rd in items.RENDERERS + items.LADDER_RENDERERS:
+            text = items.build_prompt(it, rd, [], "raw" if rd != "chat" else "chatml")["prompt"]
+            assert not re.search(r"\bnow\b", text, flags=re.I), (rd, text)
+            if rd == "code":
+                continue
             assert pat.findall(text) == it.mention_order, rd
             assert not text.endswith(" ")
-            shot = items.build_prompt(it, rd, shots[:3], "raw")["prompt"]
-            assert shot.endswith(text) and shot.count("\n\n###\n\n") == 3
+            if rd != "chat":
+                shot = items.build_prompt(it, rd, shots[:3], "raw")["prompt"]
+                assert shot.endswith(text) and shot.count("\n\n###\n\n") == 3
     with pytest.raises(ValueError, match="unknown renderer"):
         items.build_prompt(its[0], "poem", [], "raw")
+
+
+def test_move_wording_follows_the_target_state():
+    """"the empty Box J" exactly when the move's target is empty; "replacing what was there" exactly when it is not."""
+    its, _ = items.generate(list(items.BANKED_VERIFIED_NAMES), 40, 0, items.DEFAULT_SEED)
+    seen = {True: 0, False: 0}
+    for it in its:
+        for k, (op, empty) in enumerate(items._ops_with_target_empty(it)):
+            if op["kind"] != "move":
+                continue
+            seen[empty] += 1
+            s = items._op_sentence(op, empty)
+            assert ("the empty Box" in s) == empty and ("replacing" in s) == (not empty)
+            state = items._sim(it.boxes0, [items.Op(**o) for o in it.ops[:k]])
+            assert (state[op["j"]] is None) == empty
+    assert seen[True] and seen[False]
 
 
 # ── (b) aggregate on a synthetic grid ──────────────────────────────────────────
@@ -289,7 +333,7 @@ def test_run_grid_payloads(tmp_path, monkeypatch, grid_items, capsys):
                 assert p["prompt"] == items.build_prompt(it, rd, shots[:ns], fam)["prompt"]
                 if rd == "chat":
                     assert p["prompt"].startswith("<|im_start|>user\n")
-                    assert p["prompt"].endswith(f"<|im_start|>assistant\nSo Box {it.query_box} now contains the")
+                    assert p["prompt"].endswith(f"<|im_start|>assistant\nSo Box {it.query_box} contains the")
 
     rows = [json.loads(ln) for ln in out.read_text().splitlines()]
     assert len(rows) == 8
@@ -308,7 +352,7 @@ def test_payload_kinds(grid_items):
     it = its[1]
     p, fmt = grid.build_payload_item(it, "chat", 3, shots, "hf-chat")
     assert fmt == "hf-chat" and set(p) == {"id", "messages", "answer_prefix", "candidates"}
-    assert p["answer_prefix"] == f"So Box {it.query_box} now contains the"
+    assert p["answer_prefix"] == f"So Box {it.query_box} contains the"
     p, fmt = grid.build_payload_item(it, "chat", 0, shots, "hf-base")
     assert fmt == "chatml-literal" and p["prompt"].startswith("<|im_start|>")
     p, fmt = grid.build_payload_item(it, "narrative", 3, shots, "hf-chat")

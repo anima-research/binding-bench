@@ -5,22 +5,26 @@ byte-identical for a given seed + name pool, so banked grids stay comparable.
 
 Renderers over the SAME abstract item:
   code       — Python dict mutations, query as ``print(state["G"])  #`` completion
-  narrative  — third-person prose, no dialogue
+  narrative  — third-person prose, no dialogue (the screenplay's lines run
+               together)
   screenplay — SAM:/RIVER: prefixed lines, no chat tokens
   chat       — the screenplay lines as a role-tagged conversation (koto ChatML
                built here; HF chat models template server-side)
 
-Format-ladder renderers (``LADDER_RENDERERS``; not in ``RENDERERS``, so the
-banked grids and the in-loop slice are unchanged). Each differs from a
-neighbour in one respect:
-  paragraph  — the screenplay's lines run together with spaces, no speakers
-  lines      — the same lines, one per line, no speakers
-               (paragraph -> lines: whitespace only; lines -> screenplay: the
+Format-ladder renderers (``LADDER_RENDERERS``; opt-in, not in ``RENDERERS``).
+Each differs from a neighbour in one respect:
+  lines      — the narrative's sentences on the screenplay's lines, no speakers
+               (narrative -> lines: whitespace only; lines -> screenplay: the
                speaker labels only; screenplay -> chat: labels -> chat turns)
-  story      — the same events told as fiction, one paragraph (vs paragraph:
+  story      — the same events told as fiction, one paragraph (vs narrative:
                the wording only)
   talk       — the screenplay's lines spoken in the first person (vs
                screenplay: the wording only)
+
+Every query lead is neutral: it states no change ("So Box G contains the"), so
+the lead reads the same whether or not an op touched the queried box. A move
+into an empty box says so ("into the empty Box G") rather than "replacing
+whatever was there".
 
 Invariants (``selftest``):
   * gold is computed ONCE, from the abstract simulation, for all renderers;
@@ -98,10 +102,10 @@ BANKED_NAMES_TAG = "<banked:p06-verified-names-2026-08-02>"
 
 SPEAKERS = ("SAM", "RIVER")  # screenplay/chat; SAM lines -> user, RIVER -> assistant
 
-Renderer = Literal["code", "narrative", "screenplay", "chat", "paragraph", "lines", "story", "talk"]
+Renderer = Literal["code", "narrative", "screenplay", "chat", "lines", "story", "talk"]
 Family = Literal["raw", "chatml", "hf-chat"]
 RENDERERS: tuple[Renderer, ...] = ("code", "narrative", "screenplay", "chat")
-LADDER_RENDERERS: tuple[Renderer, ...] = ("paragraph", "lines", "story", "talk")
+LADDER_RENDERERS: tuple[Renderer, ...] = ("lines", "story", "talk")
 ALL_RENDERERS: tuple[Renderer, ...] = RENDERERS + LADDER_RENDERERS
 STORY_OPENER = "Mara was packing up her workshop."
 
@@ -247,13 +251,26 @@ def _decl_sentences(item: Item) -> list[str]:
     return [f"Box {b} contains the {o}." for b, o in item.boxes0.items()]
 
 
-def _op_sentence(op: dict[str, Any]) -> str:
+def _ops_with_target_empty(item: Item) -> list[tuple[dict[str, Any], bool]]:
+    """Each op with whether its target box (``j``) is empty just before it."""
+    state: dict[str, Optional[str]] = dict(item.boxes0)
+    out = []
+    for o in item.ops:
+        op = Op(**o)
+        out.append((o, op.j is not None and state.get(op.j) is None))
+        state = _sim(state, [op])
+    return out
+
+
+def _op_sentence(op: dict[str, Any], target_empty: bool = False) -> str:
     k = op["kind"]
     if k == "swap":
         return f"The contents of Box {op['i']} and Box {op['j']} are swapped."
     if k == "move":
+        if target_empty:
+            return f"Everything in Box {op['i']} is moved into the empty Box {op['j']}."
         return (f"Everything in Box {op['i']} is moved into Box {op['j']}, "
-                f"replacing whatever was there.")
+                f"replacing what was there.")
     if k == "put":
         return f"The {op['obj']} is placed into the empty Box {op['i']}."
     if k == "overwrite":
@@ -263,9 +280,8 @@ def _op_sentence(op: dict[str, Any]) -> str:
 
 
 def render_narrative(item: Item, with_answer: bool) -> str:
-    body = " ".join(_decl_sentences(item) + [_op_sentence(o) for o in item.ops])
-    lead = f"{body} Box {item.query_box} now contains the"
-    return f"{lead} {item.gold}." if with_answer else lead
+    text = " ".join(_dialogue_lines(item))
+    return f"{text} {item.gold}." if with_answer else text
 
 
 def _code_op(op: dict[str, Any]) -> str:
@@ -298,8 +314,8 @@ def _dialogue_lines(item: Item) -> list[str]:
     else:
         cut = max(1, (len(decls) + 1) // 2)
         lines = [" ".join(decls[:cut]), " ".join(decls[cut:]) or "Go on."]
-    lines += [_op_sentence(o) for o in item.ops]
-    lines.append(f"So Box {item.query_box} now contains the")
+    lines += [_op_sentence(o, e) for o, e in _ops_with_target_empty(item)]
+    lines.append(f"So Box {item.query_box} contains the")
     assert (len(lines) - 1) % 2 == 1, "query line must land on speaker 2"
     return lines
 
@@ -312,23 +328,20 @@ def render_screenplay(item: Item, with_answer: bool) -> str:
     return "\n".join(out)
 
 
-def render_paragraph(item: Item, with_answer: bool) -> str:
-    text = " ".join(_dialogue_lines(item))
-    return f"{text} {item.gold}." if with_answer else text
-
-
 def render_lines(item: Item, with_answer: bool) -> str:
     text = "\n".join(_dialogue_lines(item))
     return f"{text} {item.gold}." if with_answer else text
 
 
-def _story_op(op: dict[str, Any]) -> str:
+def _story_op(op: dict[str, Any], target_empty: bool) -> str:
     k = op["kind"]
     if k == "swap":
         return f"Then she swapped what was in Box {op['i']} with what was in Box {op['j']}."
     if k == "move":
+        if target_empty:
+            return f"She tipped everything from Box {op['i']} into the empty Box {op['j']}."
         return (f"She tipped everything from Box {op['i']} into Box {op['j']}, "
-                f"throwing out whatever Box {op['j']} had held.")
+                f"throwing out what Box {op['j']} had held.")
     if k == "put":
         return f"She set the {op['obj']} in the empty Box {op['i']}."
     if k == "overwrite":
@@ -338,18 +351,20 @@ def _story_op(op: dict[str, Any]) -> str:
 
 def render_story(item: Item, with_answer: bool) -> str:
     decls = [f"She put the {o} in Box {b}." for b, o in item.boxes0.items()]
-    body = " ".join([STORY_OPENER] + decls + [_story_op(o) for o in item.ops])
+    body = " ".join([STORY_OPENER] + decls + [_story_op(o, e) for o, e in _ops_with_target_empty(item)])
     lead = f"{body} When she had finished, Box {item.query_box} held the"
     return f"{lead} {item.gold}." if with_answer else lead
 
 
-def _talk_op(op: dict[str, Any]) -> str:
+def _talk_op(op: dict[str, Any], target_empty: bool) -> str:
     k = op["kind"]
     if k == "swap":
-        return f"I'm swapping what's in Box {op['i']} and Box {op['j']}."
+        return f"I'm swapping what's in Box {op['i']} with what's in Box {op['j']}."
     if k == "move":
+        if target_empty:
+            return f"I'm emptying Box {op['i']} into Box {op['j']}, which was empty."
         return (f"I'm emptying Box {op['i']} into Box {op['j']}, "
-                f"so whatever was in Box {op['j']} is gone.")
+                f"so what was in Box {op['j']} is gone.")
     if k == "put":
         return f"I'm putting the {op['obj']} in Box {op['i']}, since it's empty."
     if k == "overwrite":
@@ -366,7 +381,7 @@ def _talk_lines(item: Item) -> list[str]:
     else:
         cut = max(1, (len(decls) + 1) // 2)
         lines = [" ".join(decls[:cut]), " ".join(decls[cut:]) or "Go on."]
-    lines += [_talk_op(o) for o in item.ops]
+    lines += [_talk_op(o, e) for o, e in _ops_with_target_empty(item)]
     lines.append(f"Okay, so Box {item.query_box} has the")
     assert (len(lines) - 1) % 2 == 1, "query line must land on speaker 2"
     return lines
@@ -408,8 +423,7 @@ def chatml_render(messages: list[dict[str, str]], open_final: bool) -> str:
 
 
 _RAW_RENDERERS = {"code": render_code, "narrative": render_narrative,
-                  "screenplay": render_screenplay, "paragraph": render_paragraph,
-                  "lines": render_lines, "story": render_story, "talk": render_talk}
+                  "screenplay": render_screenplay, "lines": render_lines, "story": render_story, "talk": render_talk}
 
 
 def build_prompt(item: Item, renderer: str, shots: list[Item],
@@ -590,8 +604,8 @@ def selftest() -> int:
             check(not text.endswith(" "), f"{it.item_id}/{rname}: trailing space")
         # 3b. the ladder differs from its neighbours in one respect each
         lines = render_lines(it, False)
-        check(lines.replace("\n", " ") == render_paragraph(it, False),
-              f"{it.item_id}: lines != paragraph up to whitespace")
+        check(lines.replace("\n", " ") == render_narrative(it, False),
+              f"{it.item_id}: lines != narrative up to whitespace")
         check(re.sub(r"^(SAM|RIVER): ", "", render_screenplay(it, False), flags=re.M) == lines,
               f"{it.item_id}: screenplay != lines up to the speaker labels")
         check(render_talk(it, False).count("\n") == render_screenplay(it, False).count("\n"),
@@ -606,7 +620,7 @@ def selftest() -> int:
               f"{it.item_id}/chat: roles do not alternate")
 
         # 4. with_answer renders end with the gold
-        for rfn in (render_narrative, render_screenplay, render_paragraph, render_lines,
+        for rfn in (render_narrative, render_screenplay, render_lines,
                     render_story, render_talk):
             check(rfn(it, True).endswith(f" {it.gold}."),
                   f"{it.item_id}: shot render missing gold")
@@ -622,7 +636,7 @@ def selftest() -> int:
     # 6. ChatML render shape
     it = gen_item(rng, 3, 2, pool, False, "chatml_check")
     s = chatml_render(chat_messages(it, False), open_final=True)
-    check(s.endswith(f"So Box {it.query_box} now contains the"),
+    check(s.endswith(f"So Box {it.query_box} contains the"),
           "chatml: open final turn malformed")
     check(s.count("<|im_start|>assistant") >= 1 and not s.endswith("<|im_end|>\n"),
           "chatml: final turn closed but should be open")
