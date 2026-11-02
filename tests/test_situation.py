@@ -82,7 +82,25 @@ def test_cli_gen_writes_gated_items_and_rows(tmp_path):
     import json
 
     from binding_bench.situation.__main__ import main as cli_main
-    assert cli_main(["gen", "--out", str(tmp_path), "--per-arm", "3"]) == 0
+    assert cli_main(["gen", "--out", str(tmp_path), "--per-arm", "12"]) == 0
     items = [json.loads(ln) for ln in (tmp_path / "items.jsonl").read_text().splitlines()]
     rows = [json.loads(ln) for ln in (tmp_path / "rows.jsonl").read_text().splitlines()]
-    assert len(items) == 3 * len(si.ARMS) and len(rows) == sum(len(i["probes"]) for i in items) * si.N_RENDERINGS
+    assert len(items) == 12 * len(si.ARMS)
+    assert len(rows) == 2 * sum(len(i["probes"]) for i in items) * si.N_RENDERINGS      # 0shot + fair
+
+
+def test_transcript_rendering_and_fair_rows(items):
+    for it in items[:10]:
+        t = si.render_story(it, si.NARRATION)
+        lines = t.split("\n")
+        assert lines[0].startswith("A chat between ") and len(lines) == len(it.events) + 1
+        assert all(re.match(r"^(\w+): ", ln) and ln.split(":")[0] in it.people for ln in lines[1:])
+    fair = si.fair_rows(items)
+    assert len(fair) == len(si.rows(items))
+    by = {(r["item_id"], r["probe"]): r for r in fair if r["rendering"] == 0}
+    for (iid, kind), r in list(by.items())[:40]:
+        it = next(i for i in items if i.item_id == iid)
+        shots = r["prompt"].split(si.SEPARATOR)[:-1]
+        assert len(shots) == si.FAIR_K
+        words = {w for sh in shots for w in re.findall(r"[A-Za-z]+", sh)}
+        assert not words & set(it.people + [it.obj] + it.places), iid
