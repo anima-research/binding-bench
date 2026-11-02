@@ -5,8 +5,8 @@ validity facts beside them, keyed by eval:
 
 * ``construct``: what the eval claims to measure, in the benchmark's construct vocabulary (:data:`CONSTRUCTS`).
 * ``batteries``: the pinned batteries that carry it (none for riders, whose items are generated at scoring time).
-* ``recipe``: how its prompts are made again, byte for byte: a generator in this repository, or for an older
-  bindprobes version the generator that drew it (:data:`HISTORICAL_RECIPES`).
+* ``recipe``: how its prompts are made again, byte for byte: a generator in this repository (bindprobes:
+  :data:`BP_RECIPES`), or for an older bindprobes version the generator that drew it (:data:`HISTORICAL_RECIPES`).
 * ``clean``: the readings that count when two models are compared; every other reading is a diagnostic.
 * ``floor``: the reading that bounds it from below (bare items, no worked examples), when there is one.
 * ``flags``: audit findings, each scoped to the panel it was measured on. A flag says a reading is not a clean
@@ -60,9 +60,23 @@ class Eval:
     audit: Audit = "pending"
 
 
-# bp-v3.2's recipe: the v3 families at their current versions, emitted with this seed and per-cell sizes
-# (binding_bench.bindprobes.items.emit); the emit is byte-identical to the pinned file.
-BP_V32_RECIPE: Mapping[str, object] = {"seed": 2031, "per_cell": {"setbind": 64, "answer": 160, "adjacency": 225, "codevarmut": 100}}
+@dataclass(frozen=True)
+class BpRecipe:
+    """A bindprobes battery as this package's generator emits it at the families' current versions:
+    ``binding_bench.bindprobes.items.emit(out, seed, list(per_cell), per_cell)``, then only the items whose cell is
+    in ``keep_cells`` when that is set, in emitted order. The result is byte-identical to the pinned file."""
+    seed: int
+    per_cell: Mapping[str, int]            # its key order is the families argument's order
+    keep_cells: tuple[tuple[object, ...], ...] = ()
+
+
+BP_RECIPES: Mapping[str, BpRecipe] = {
+    "bp-v3.2": BpRecipe(2031, {"setbind": 64, "answer": 160, "adjacency": 225, "codevarmut": 100}),
+    "bp-profile": BpRecipe(2026, {"attr": 110, "codevar": 100, "dialogue": 100}),
+    "bp-deixis-v2": BpRecipe(2026, {"deixis": 60}),
+    "bp-deixis-lite": BpRecipe(113, {"deixis": 200}, ((3, 1, "owner"), (3, 2, "owner"))),
+}
+_BP = "BP_RECIPES[{}] (bindprobes.items.emit)"
 
 _BP_CLEAN = ("0shot", "fair")   # bare items are the floor; `fair` (four exemplars balanced on every cell component) is the few-shot reading
 
@@ -82,9 +96,6 @@ class EmitRecipe:
 # The generators' current family versions draw different items, so these batteries come back only from the code that
 # drew them. Each reproduces its pinned file byte for byte.
 HISTORICAL_RECIPES: Mapping[str, EmitRecipe] = {
-    "bp-profile": EmitRecipe("44cd0bc", 2026, {"attr": 110, "codevar": 100, "dialogue": 100}),
-    "bp-deixis-v2": EmitRecipe("7a5a672", 2026, {"deixis": 60}),
-    "bp-deixis-lite": EmitRecipe("8b86281", 113, {"deixis": 200}, ((3, 1, "owner"), (3, 2, "owner"))),
     "bp-v3.1": EmitRecipe("795b324", 2031, {"setbind": 64, "answer": 160, "adjacency": 150, "codevarmut": 100}),
 }
 _HISTORICAL = "HISTORICAL_RECIPES[{}] (tools/replay_recipe.py)"
@@ -93,29 +104,29 @@ _STAGE = "python -m binding_bench.binding gen-stage (swapdyn and stage5-decomp f
 REGISTRY: dict[str, Eval] = {e.name: e for e in (
     # ---- bindprobes: one family per construct, read under every condition of bindprobes.items.CONDITIONS
     Eval("bp-attr", "static-lookup", "bindprobes", "who holds which attribute, in prose", ("bp-profile",),
-         _HISTORICAL.format("bp-profile"), _BP_CLEAN, "0shot",
+         _BP.format("bp-profile"), _BP_CLEAN, "0shot",
          (Flag("0shot", "format-loaded: worked examples lift it by 8 to 52 points", "8-model panel",
                "rendering spread, 0shot vs fair"),),
          "audited"),
     Eval("bp-codevar", "update", "bindprobes", "a variable's value after reassignments, in code", ("bp-profile",),
-         _HISTORICAL.format("bp-profile"), _BP_CLEAN, "0shot",
+         _BP.format("bp-profile"), _BP_CLEAN, "0shot",
          (Flag("3shot", "shortcut: exemplars that match the item's cell can be copied", "8-model panel",
                "mixed-shot comparison"),),
          "audited"),
     Eval("bp-dialogue", "update", "bindprobes", "who has what after objects change hands in a dialogue", ("bp-profile",),
-         _HISTORICAL.format("bp-profile"), _BP_CLEAN, "0shot", (), "audited"),
+         _BP.format("bp-profile"), _BP_CLEAN, "0shot", (), "audited"),
     Eval("bp-deixis", "deixis", "bindprobes", "person deixis: deictic, third-person and twin variants",
-         ("bp-deixis-v2", "bp-deixis-lite"), _HISTORICAL.format("bp-deixis-v2 / bp-deixis-lite"), _BP_CLEAN, "0shot", (), "audited"),
+         ("bp-deixis-v2", "bp-deixis-lite"), _BP.format("bp-deixis-v2 / bp-deixis-lite"), _BP_CLEAN, "0shot", (), "audited"),
     Eval("bp-setbind", "set-binding", "bindprobes", "several members bound to one set", ("bp-v3.2", "bp-v3.1"),
-         "bp-v3.2: BP_V32_RECIPE; bp-v3.1: " + _HISTORICAL.format("bp-v3.1"), _BP_CLEAN, "0shot", (), "audited"),
+         "bp-v3.2: " + _BP.format("bp-v3.2") + "; bp-v3.1: " + _HISTORICAL.format("bp-v3.1"), _BP_CLEAN, "0shot", (), "audited"),
     Eval("bp-answer", "deixis", "bindprobes", "production deixis: who answers, from the reply's own words",
-         ("bp-v3.2", "bp-v3.1"), "bp-v3.2: BP_V32_RECIPE; bp-v3.1: " + _HISTORICAL.format("bp-v3.1"), _BP_CLEAN, "0shot",
+         ("bp-v3.2", "bp-v3.1"), "bp-v3.2: " + _BP.format("bp-v3.2") + "; bp-v3.1: " + _HISTORICAL.format("bp-v3.1"), _BP_CLEAN, "0shot",
          (Flag("3shot", "exemplars mislead: below 0shot", "8/8 models", "condition comparison"),),
          "audited"),
     Eval("bp-adjacency", "deixis", "bindprobes", "structural you: the reply's addressee", ("bp-v3.2", "bp-v3.1"),
-         "bp-v3.2: BP_V32_RECIPE; bp-v3.1: " + _HISTORICAL.format("bp-v3.1"), _BP_CLEAN, "0shot", (), "audited"),
+         "bp-v3.2: " + _BP.format("bp-v3.2") + "; bp-v3.1: " + _HISTORICAL.format("bp-v3.1"), _BP_CLEAN, "0shot", (), "audited"),
     Eval("bp-codevarmut", "update", "bindprobes", "aliased lists: a mutation seen through another name",
-         ("bp-v3.2", "bp-v3.1"), "bp-v3.2: BP_V32_RECIPE; bp-v3.1: " + _HISTORICAL.format("bp-v3.1"), _BP_CLEAN, "0shot",
+         ("bp-v3.2", "bp-v3.1"), "bp-v3.2: " + _BP.format("bp-v3.2") + "; bp-v3.1: " + _HISTORICAL.format("bp-v3.1"), _BP_CLEAN, "0shot",
          (Flag("3shot", "shortcut: cell-matched exemplars teach the answer's role; flipping their answers collapses "
                         "the score", "6/6 eligible models", "flipped-exemplar test"),),
          "audited"),

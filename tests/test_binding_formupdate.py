@@ -165,8 +165,12 @@ def test_prose_and_code_follow_the_fluid_f3_templates(full):
         if r["condition"] == "A":
             continue
         ev, q = _replay(r)
-        assert fu.render(r["register"], ev, q) == fl._f3_render(r["register"], [(h, v, k == "update")
-                                                                                for k, h, v in ev], q)
+        f3 = fl._f3_render(r["register"], [(h, v, k == "update") for k, h, v in ev], q)
+        assert fu.render(r["register"], ev, q, fu.V2) == f3
+        # v3 (the current version) differs from F3 in its prose query lead only
+        ours = fu.render(r["register"], ev, q)
+        assert ours == (f3 if r["register"] == "code"
+                        else f3.replace(fu.PROSE_LEAD[fu.V2].format(q=q), fu.PROSE_LEAD[fu.V3].format(q=q)))
 
 
 # ── pairing ───────────────────────────────────────────────────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 import torch
 
-from binding_bench.registry import BP_V32_RECIPE
+from binding_bench.registry import BP_RECIPES
 from binding_bench.binding import batteries as bt
 from binding_bench.binding import capacity as cap
 from binding_bench.binding import readers
@@ -232,6 +232,7 @@ def test_resolve_groups_and_pins(tmp_path):
     with pytest.raises(KeyError):
         bt.resolve("nope")
     b = bt.BATTERIES["joinlite-v1"]
+    (tmp_path / b.file).parent.mkdir(parents=True, exist_ok=True)
     (tmp_path / b.file).write_text('{"id": "x"}\n')
     with pytest.raises(bt.PinError):
         bt.path_for(b, tmp_path)
@@ -242,15 +243,20 @@ def test_resolve_groups_and_pins(tmp_path):
 
 
 
-def test_bp_v32_regenerates_its_pin(tmp_path):
-    """bp-v3.2 is the bindprobes v3 families at their current versions, emitted with the battery's seed and sizes:
-    the emit is byte-identical to the pinned file."""
+@pytest.mark.parametrize("name", sorted(BP_RECIPES))
+def test_bindprobes_battery_regenerates_its_pin(name, tmp_path):
+    """Every current bindprobes battery is its recipe's emit (cells kept in emitted order): byte-identical to the
+    pinned file, with the pinned rendering."""
     from binding_bench.bindprobes import items
 
-    b = bt.BATTERIES["bp-v3.2"]
-    path = items.emit(tmp_path, BP_V32_RECIPE["seed"], list(b.families), BP_V32_RECIPE["per_cell"])
+    b, r = bt.BATTERIES[name], BP_RECIPES[name]
+    path = items.emit(tmp_path, r.seed, list(r.per_cell), dict(r.per_cell))
+    if r.keep_cells:
+        keep = {tuple(c) for c in r.keep_cells}
+        lines = [ln for ln in path.read_text().splitlines(keepends=True) if tuple(json.loads(ln)["cell"]) in keep]
+        path.write_text("".join(lines))
     assert bt.sha256(path) == b.sha256
-    assert bt.BATTERIES["bp-v3.1"].sha256 != b.sha256 and "bp-v3.2" in bt.GROUPS["bindprobes"]
+    assert items.render_sha256(items.load_items(path)) == b.render_sha256
 
 
 def test_report_cli(tmp_path, capsys):

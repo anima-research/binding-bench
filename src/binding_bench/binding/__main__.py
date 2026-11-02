@@ -227,6 +227,7 @@ def cmd_gen_fluid(a: argparse.Namespace) -> int:
         bad = fl.audit_failures(fl.audit(rows))
         b = bt.BATTERIES[name]
         dest = out / b.file
+        dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text("".join(json.dumps(r) + "\n" for r in rows))
         got = bt.sha256(dest)
         same = got == b.sha256
@@ -339,6 +340,7 @@ def cmd_gen_formupdate(a: argparse.Namespace) -> int:
         bad = fu.audit_failures(fu.audit(rows)) + fu.pairing_failures(rows)
         b = bt.BATTERIES[version]
         dest = out / b.file
+        dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text("".join(json.dumps(r) + "\n" for r in rows))
         got = bt.sha256(dest)
         same = got == b.sha256

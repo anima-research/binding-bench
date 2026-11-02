@@ -151,7 +151,7 @@ SHOT_SEPARATOR = "\n\n* * *\n\n"
 @dataclass
 class Turn:
     who: str
-    kind: str      # own_have | own_mine | give_take | give_giving | give_yours | q_self | q_you
+    kind: str      # own_have | own_mine | own_hand | give_take | give_giving | give_yours | give_hand | q_self | q_you
     obj: str = ""
 
 
@@ -167,11 +167,14 @@ _PATTERNS = [(re.compile(r"^I have the (\w+)\.$"), "own_have"), (re.compile(r"^T
              (re.compile(r"^Here, take my (\w+)\.$"), "give_take"),
              (re.compile(r"^I'm giving you my (\w+)\.$"), "give_giving"),
              (re.compile(r"^My (\w+) is yours now\.$"), "give_yours"),
+             (re.compile(r"^The (\w+) is in my hand\.$"), "own_hand"),
+             (re.compile(r"^My (\w+) is in your hand now\.$"), "give_hand"),
              (re.compile(r"^Right now I'm holding the(?: (\w+)\.)?$"), "q_self"),
              (re.compile(r"^Right now you're holding the(?: (\w+)\.)?$"), "q_you")]
 
 _DEICTIC = {"own_have": "I have the {o}.", "own_mine": "The {o} is mine.", "give_take": "Here, take my {o}.",
-            "give_giving": "I'm giving you my {o}.", "give_yours": "My {o} is yours now."}
+            "give_giving": "I'm giving you my {o}.", "give_yours": "My {o} is yours now.",
+            "own_hand": "The {o} is in my hand.", "give_hand": "My {o} is in your hand now."}
 
 
 def _parse(block: str) -> Episode:
@@ -271,7 +274,8 @@ def decomp_rows(swapdyn: Sequence[Row]) -> list[Row]:
             parts = []
             for k, e in enumerate(eps):
                 th = rng.choice(names) if v == "three_vocative" else ""
-                ex = rng.choice(EXTRA_OBJS) if v == "three_vocative" else ""
+                own = {t.obj for t in e.turns} | {e.answer}
+                ex = rng.choice([o for o in EXTRA_OBJS if o not in own]) if v == "three_vocative" else ""
                 parts.append(_render(e, v, with_answer=k < len(eps) - 1, third=th, extra=ex))
             prompt = SHOT_SEPARATOR.join(parts)
             if v == "deictic" and prompt != r["prompt"]:

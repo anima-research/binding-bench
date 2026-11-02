@@ -59,7 +59,9 @@ def test_registry_rows_are_well_formed():
 
 
 def test_bp_v32_recipe_names_its_battery_families():
-    assert set(rg.BP_V32_RECIPE["per_cell"]) == set(bt.BATTERIES["bp-v3.2"].families)
+    for name, r in rg.BP_RECIPES.items():
+        fams = bt.BATTERIES[name].families
+        assert not fams or tuple(r.per_cell) == fams, name
 
 
 def test_panel_reliability_names_real_evals_and_slots_a_large_model_check_for_panel_floors():

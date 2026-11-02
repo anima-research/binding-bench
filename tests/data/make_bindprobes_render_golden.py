@@ -7,7 +7,7 @@ the prompt rendered by the code that generated the file. ``tests/test_bindprobes
 the same items with the code in this tree and asserts the strings are byte-identical.
 
 The script imports only what every bindprobes version has (``items.load_items``, ``items.build_prompt``,
-``items.CONDITIONS``), so it runs against an older checkout of this repository::
+``items.CONDITIONS``, or ``items.PINNED_CONDITIONS`` where it exists), so it runs against an older checkout of this repository::
 
     git archive <commit> src | tar -x -C /tmp/old
     python -I tests/data/make_bindprobes_render_golden.py --code-root /tmp/old/src --prompts-dir DIR \\
@@ -50,7 +50,12 @@ def file_sha256(path: Path) -> str:
 
 def render_record(path: Path) -> dict[str, Any]:
     """The golden record of one item file, rendered by whichever ``binding_bench`` is importable."""
-    from binding_bench.bindprobes.items import CONDITIONS, build_prompt, load_items
+    from binding_bench.bindprobes import items as bi
+
+    build_prompt, load_items = bi.build_prompt, bi.load_items
+    # the pinned conditions (``fair`` is drawn from the scored items' pool and pinned by none); a tree older than
+    # ``PINNED_CONDITIONS`` pinned every condition it had
+    CONDITIONS = getattr(bi, "PINNED_CONDITIONS", bi.CONDITIONS)
 
     items = load_items(path)
     conds: dict[str, Any] = {}

@@ -20,7 +20,10 @@ def test_every_battery_names_a_recipe():
         assert "frozen" not in e.recipe and e.recipe, e.name
     named = {b for e in rg.REGISTRY.values() for b in e.batteries}
     historical = {k for k in rg.HISTORICAL_RECIPES}
-    assert historical <= named and all(bt.BATTERIES[k].kind == "bindprobes" for k in historical)
+    current = set(rg.BP_RECIPES)
+    assert historical <= named and all(bt.BATTERIES[k].kind == "bindprobes" for k in historical | current)
+    assert not historical & current
+    assert {b.name for b in bt.BATTERIES.values() if b.kind == "bindprobes"} == historical | current
 
 
 def test_historical_recipes_are_well_formed():
@@ -44,4 +47,4 @@ def test_replay_reproduces_a_historical_pin(tmp_path):
     clone = os.environ.get(KOTODAMA_ENV)
     if not clone or not (Path(clone) / ".git").exists():
         pytest.skip(f"${KOTODAMA_ENV} does not name a kotodama clone")
-    assert rr.main(["--kotodama", clone, "--battery", "bp-deixis-v2", "--out", str(tmp_path)]) == 0
+    assert rr.main(["--kotodama", clone, "--battery", "bp-v3.1", "--out", str(tmp_path)]) == 0

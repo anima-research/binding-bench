@@ -68,7 +68,7 @@ def test_sample_covers_every_file_family_and_generation():
     tags = {t for v in by_file.values() for _, t in v}
     # every generation each family has written (codevar and codevarmut have one wording)
     for tag in ("attr", "attr-v2", "dialogue", "dialogue-v2", "deixis-v2", "deixis-v3", "setbind-v1",
-                "setbind-v2", "setbind-v3", "answer-v2", "answer-v3", "adjacency-v1", "adjacency-v2",
+                "setbind-v2", "setbind-v3", "answer-v2", "answer-v3", "answer-v4", "deixis-v4", "adjacency-v1", "adjacency-v2",
                 "adjacency-v3", "codevar", "codevarmut-v1"):
         assert tag in tags, tag
 
