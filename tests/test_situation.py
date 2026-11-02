@@ -55,8 +55,11 @@ def test_every_item_passes_the_gate_and_arms_hold(items):
     for i in by["B"]:
         bel = next(p for p in i.probes if p.kind == "belief")
         assert bel.gold != i.meta["world"]
-    for i in by["L"]:
+    for i in by["D"]:
         assert {p.kind for p in i.probes} == {"situation", "belief", "knot"}
+        assert next(p for p in i.probes if p.kind == "belief").gold != i.meta["world"]
+    for i in by["L"]:
+        assert {p.kind for p in i.probes} == {"situation", "knot"}
 
 
 def test_renderings_differ_only_in_wording(items):

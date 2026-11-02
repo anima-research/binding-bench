@@ -11,6 +11,7 @@ narrows the candidates). Events:
   reveal   a person sees where it really is                    their belief := world
   mention  a person uses a place for something else            nothing changes (the recency trap)
   chat     neutral filler                                      nothing changes
+  motive   actor wants to keep the object from listener        nothing changes (gives a lie its reason)
 
 The simulator is the only source of golds: :func:`simulate` replays the events and :func:`check_story` refuses a
 story whose events contradict themselves (a move from where the object isn't, an absent actor acting, …).
@@ -21,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal, Optional
 
-EventKind = Literal["put", "move", "leave", "return", "claim", "reveal", "mention", "chat"]
+EventKind = Literal["put", "move", "leave", "return", "claim", "reveal", "mention", "chat", "motive"]
 CHANGES: frozenset[str] = frozenset({"put", "move"})
 
 
@@ -87,6 +88,9 @@ def simulate(people: list[str], events: list[Event]) -> State:
         elif ev.kind == "mention":
             if ev.place is None:
                 raise StoryError(f"{where}: mention needs a place")
+        elif ev.kind == "motive":
+            if ev.listener not in st.belief or ev.listener == ev.actor:
+                raise StoryError(f"{where}: a motive names someone else to keep the object from")
         elif ev.kind != "chat":
             raise StoryError(f"{where}: unknown event kind")
         if ev.kind == "move" and ev.src is not None:

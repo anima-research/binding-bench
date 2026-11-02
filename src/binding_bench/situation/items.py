@@ -12,8 +12,9 @@ Arms (each a fixed event skeleton, filled from the pools):
   R  recency trap    put, move, then someone opens the OLD place for something else
                                                                   situation = the new place; the last place mention is the old
   B  belief          A puts it, A leaves, B moves it, A returns  situation = new; belief(A) = old
-  L  resolved lie    A puts, A leaves, B moves, A returns, B tells A it's where A left it (false), A then sees it
-                     in the new place                             situation = new; belief(A) = new (seen after the lie)
+  D  deceived        A puts, A leaves, B moves, A returns, B (who wants to keep it from A) tells A it's where A
+                     left it                                      situation = new; belief(A) = old (the lie)
+  L  resolved lie    D, then A sees it in the new place           situation = new (the knot probe asks who lied)
 
 Renderings: 0–2 are narration, each slot with three paraphrases (rendering ``r`` takes paraphrase ``r`` of every slot,
 so they differ only in wording); 3 is the room's transcript, each person saying what they do ("Anna: I'm putting the
@@ -33,8 +34,8 @@ from typing import Any, Literal, Optional, Sequence
 from binding_bench.lexicon import Name, Noun, Phrase, PhraseSet, check_pools, draw
 from binding_bench.situation.world import CHANGES, Event, State, check_story
 
-Arm = Literal["U", "N", "R", "B", "L"]
-ARMS: tuple[Arm, ...] = ("U", "N", "R", "B", "L")
+Arm = Literal["U", "N", "R", "B", "D", "L"]
+ARMS: tuple[Arm, ...] = ("U", "N", "R", "B", "D", "L")
 ProbeKind = Literal["situation", "belief", "knot"]
 NARRATION = 3                     # renderings 0–2: narration paraphrase sets
 N_RENDERINGS = 4                  # rendering 3: the same story as a transcript of the room
@@ -71,7 +72,7 @@ _S = frozenset({"state", "narration"})
 PHRASES: dict[str, PhraseSet] = {s.name: s for s in (
     PhraseSet("setup", (Phrase("{people} are at home. In the room there is {places}.", _S),
                         Phrase("{people} are in a room with {places}.", _S),
-                        Phrase("The room where {people} are has {places}.", _S))),
+                        Phrase("{people} are in a room. It has {places}.", _S))),
     PhraseSet("put", (Phrase("{a} puts the {o} in the {p}.", _E | {"location"}),
                       Phrase("{a} places the {o} in the {p}.", _E | {"location"}),
                       Phrase("{a} drops the {o} into the {p}.", _E | {"location"}))),
@@ -82,7 +83,10 @@ PHRASES: dict[str, PhraseSet] = {s.name: s for s in (
     PhraseSet("return", (Phrase("{a} comes back.", _E), Phrase("{a} returns.", _E), Phrase("{a} comes back in.", _E))),
     PhraseSet("claim", (Phrase("{a} tells {l} that the {o} is in the {p}.", _E | {"speech", "location"}),
                         Phrase("{a} says to {l} that the {o} is in the {p}.", _E | {"speech", "location"}),
-                        Phrase("{a} lets {l} know that the {o} is in the {p}.", _E | {"speech", "location"}))),
+                        Phrase("{a} insists to {l} that the {o} is in the {p}.", _E | {"speech", "location"}))),
+    PhraseSet("motive", (Phrase("{a} wants to keep the {o} hidden from {l}.", _E),
+                         Phrase("{a} would rather {l} did not find the {o}.", _E),
+                         Phrase("{a} hopes to keep the {o} away from {l}.", _E))),
     PhraseSet("reveal", (Phrase("{a} opens the {p} and sees the {o} inside.", _E | {"location"}),
                          Phrase("{a} looks in the {p} and finds the {o}.", _E | {"location"}),
                          Phrase("{a} spots the {o} in the {p}.", _E | {"location"}))),
@@ -99,15 +103,18 @@ PHRASES: dict[str, PhraseSet] = {s.name: s for s in (
     PhraseSet("d_leave", (Phrase("{a}: I'm heading out for a bit.", frozenset({"event", "dialogue"})),)),
     PhraseSet("d_return", (Phrase("{a}: I'm back.", frozenset({"event", "dialogue"})),)),
     PhraseSet("d_claim", (Phrase("{a}: {l}, the {o} is in the {p}.", frozenset({"event", "dialogue", "speech", "location"})),)),
-    PhraseSet("d_reveal", (Phrase("{a}: Oh, the {o} is in the {p}.", frozenset({"event", "dialogue", "location"})),)),
+    PhraseSet("d_reveal", (Phrase("{a}: I just found the {o} in the {p}.", frozenset({"event", "dialogue", "location"})),)),
+    PhraseSet("d_motive", (Phrase("[{a} wants to keep the {o} hidden from {l}.]", frozenset({"event", "narration"})),)),
     PhraseSet("d_mention", (Phrase("{a}: Let me look in the {p} for something else.", frozenset({"event", "dialogue"})),)),
-    PhraseSet("d_chat", (Phrase("{a}: I'll make some tea.", frozenset({"event", "dialogue"})),)),
+    PhraseSet("d_chat", (Phrase("{a}: I'll make some tea.", frozenset({"event", "dialogue"})),
+                         Phrase("{a}: I'm going to read for a while.", frozenset({"event", "dialogue"})),
+                         Phrase("{a}: Nice weather today.", frozenset({"event", "dialogue"})))),
     # probe leads: fixed classes (neutral), paraphrased by rendering
     PhraseSet("q_situation", (Phrase("So the {o} is in the", _S | {"location"}), Phrase("The {o} is in the", _S | {"location"}),
-                              Phrase("That means the {o} is in the", _S | {"location"}))),
-    PhraseSet("q_belief", (Phrase("{a} will look for the {o} in the", frozenset({"belief", "narration"})),
-                           Phrase("When {a} wants the {o}, {a} will look in the", frozenset({"belief", "narration"})),
-                           Phrase("{a} expects to find the {o} in the", frozenset({"belief", "narration"})))),
+                              Phrase("Where is the {o}? It is in the", _S | {"location"}))),
+    PhraseSet("q_belief", (Phrase("{a} thinks the {o} is in the", frozenset({"belief", "narration"})),
+                           Phrase("{a} believes the {o} is in the", frozenset({"belief", "narration"})),
+                           Phrase("{a} would look for the {o} in the", frozenset({"belief", "narration"})))),
     PhraseSet("q_knot_put", (Phrase("The one who put the {o} away was", _S), Phrase("The {o} was put away by", _S),
                              Phrase("The person who put the {o} there was", _S))),
     PhraseSet("q_knot_move", (Phrase("The one who moved the {o} was", _S), Phrase("The {o} was moved by", _S),
@@ -157,9 +164,10 @@ def _skeleton(arm: Arm, A: str, B: str, p0: str, p1: str, p2: str, rng: random.R
         return [put, move, Event("mention", rng.choice([A, B]), place=p0)]
     if arm == "B":
         return [put, Event("leave", A), move, Event("return", A)]
-    if arm == "L":
-        return [put, Event("leave", A), move, Event("return", A), Event("claim", B, place=p0, listener=A),
-                Event("reveal", A, place=p1)]
+    if arm in ("D", "L"):
+        lie = [put, Event("leave", A), move, Event("return", A), Event("motive", B, listener=A),
+               Event("claim", B, place=p0, listener=A)]
+        return lie + ([Event("reveal", A, place=p1)] if arm == "L" else [])
     raise ValueError(f"unknown arm {arm!r}")
 
 
@@ -172,14 +180,14 @@ def build(item_id: str, arm: Arm, rng: random.Random) -> Item:
     events = _skeleton(arm, A, B, p0, p1, p2, rng)
     st = check_story([A, B], places, events)
     probes = [Probe("situation", "q_situation", str(st.world), list(places), {"o": obj})]
-    if arm in ("B", "L"):
+    if arm in ("B", "D"):
         bel = st.belief[A]
-        if arm == "B" and bel == st.world:
-            raise AssertionError(f"{item_id}: B must leave A's belief behind the world")
+        if bel == st.world:
+            raise AssertionError(f"{item_id}: {arm} must leave A's belief behind the world")
         probes.append(Probe("belief", "q_belief", str(bel), list(places), {"o": obj, "a": A}))
     who = {"U": ("q_knot_move", B), "N": ("q_knot_put", A), "R": ("q_knot_move", B), "B": ("q_knot_move", B),
-           "L": ("q_knot_claim", B)}[arm]
-    knot_slots = {"o": obj, "p": p0} if arm == "L" else {"o": obj}
+           "D": ("q_knot_claim", B), "L": ("q_knot_claim", B)}[arm]
+    knot_slots = {"o": obj, "p": p0} if arm in ("D", "L") else {"o": obj}
     probes.append(Probe("knot", who[0], who[1], [A, B], knot_slots))
     meta = {"world": st.world, "belief": dict(st.belief), "last_place_mention": st.place_mentions[-1],
             "gold_is_last_place_mention": st.place_mentions[-1] == st.world,
@@ -203,9 +211,15 @@ def render_story(item: Item, r: int) -> str:
     pick = lambda name: (PHRASES["d_" + name].pick(rng, forbid=FORBID, index=0)[1] if dialogue
                          else PHRASES[name].pick(rng, forbid=FORBID, index=r)[1])
     out = [pick("setup").fill(people=f"{item.people[0]} and {item.people[1]}", places=_place_list(item.places))]
+    n_chat = 0
     for e in item.event_list():
         slots = {"a": e.actor, "o": item.obj, "p": e.place or "", "s": e.src or "", "l": e.listener or ""}
-        ph = pick(e.kind)
+        if e.kind == "chat":            # filler varies within a story, so two filler lines never repeat
+            name = "d_chat" if dialogue else "chat"
+            ph = PHRASES[name].phrases[(r + n_chat) % len(PHRASES[name].phrases)]
+            n_chat += 1
+        else:
+            ph = pick(e.kind)
         out.append(ph.fill(**{k: v for k, v in slots.items() if k in ph.slots}))
     return ("\n" if dialogue else " ").join(out)
 
@@ -288,15 +302,17 @@ def gate(item: Item) -> None:
         assert item.meta["last_place_mention"] != st.world, f"{item.item_id}: R's last mention is the gold"
     if item.arm == "N":
         assert item.meta["n_changes"] == 1, f"{item.item_id}: N must not move the object"
-    if item.arm == "L":
+    if item.arm in ("D", "L"):
         evs = item.event_list()
         claim = next(e for e in evs if e.kind == "claim")
         assert claim.place != st.world, f"{item.item_id}: L's claim must be false"
         listener_saw_move = any(e.kind == "leave" and e.actor == claim.listener for e in evs[:[x.kind for x in evs].index("move")])
         assert listener_saw_move, f"{item.item_id}: L's listener must be away for the move (else the lie is moot)"
-    if item.arm == "B":
+    if item.arm in ("B", "D"):
         bel = next(p for p in item.probes if p.kind == "belief")
-        assert bel.gold != st.world, f"{item.item_id}: B's belief must differ from the world"
+        assert bel.gold != st.world, f"{item.item_id}: {item.arm}'s belief must differ from the world"
+    if item.arm == "L":
+        assert not any(p.kind == "belief" for p in item.probes), f"{item.item_id}: L asks no belief (A has looked)"
     for r in range(N_RENDERINGS):
         text = render_story(item, r)
         for p in item.places:
