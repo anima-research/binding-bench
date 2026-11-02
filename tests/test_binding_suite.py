@@ -134,13 +134,21 @@ def _words(s: str) -> int:
 
 def test_capacity_generate_shape_and_determinism():
     rows = cap.generate(_words, k_grid=(1, 4, 30), d_grid=(0, 40), seeds=2, trials=5)
-    assert len(rows) == 3 * 2 * 2 * 5 and len({r["id"] for r in rows}) == len(rows)
+    n_r = len(cap.RENDERINGS)
+    assert len(rows) == 3 * 2 * 2 * 5 * n_r and len({r["id"] for r in rows}) == len(rows)
     assert rows == cap.generate(_words, k_grid=(1, 4, 30), d_grid=(0, 40), seeds=2, trials=5)
+    for i in range(0, len(rows), n_r):          # one trial, its renderings: the same bindings, query and filler
+        group = rows[i:i + n_r]
+        assert len({(r["gold"], r["qpos"], r["d_tokens"]) for r in group}) == 1
+        assert {r["rendering"] for r in group} == {f"{l}|q{q}" for l, q in cap.RENDERINGS}
     for r in rows:
-        assert r["prompt"].count("\n") >= r["K"] and r["prompt"].endswith(" is:")
-        assert r["gold"] in {c.strip() for c in r["candidates"]} and len(r["candidates"]) == 25
-        lines = r["prompt"].split("\n")[: r["K"]]
-        assert lines[r["qpos"]].endswith(": " + r["gold"])
+        assert r["prompt"].endswith(" is:") and r["gold"] in {c.strip() for c in r["candidates"]}
+        assert len(r["candidates"]) == 25
+        if r["layout"] == "lines":
+            assert r["prompt"].count("\n") >= r["K"]
+            assert r["prompt"].split("\n")[: r["K"]][r["qpos"]].endswith(": " + r["gold"])
+        else:
+            assert r["prompt"].split("\n")[0].split("; ")[r["qpos"]].endswith(": " + r["gold"])
         assert (r["d_tokens"] >= 40) == (r["D"] == 40)
         if r["K"] <= 25:
             assert r["gold_repeats"] == 0           # distinct tasks while the pool lasts
@@ -167,6 +175,7 @@ def test_capacity_fit_recovers_k50_and_law():
     s = cap.summarize(_synthetic(6.0, 2.0))
     assert abs(math.log(s.fit.k50) - math.log(6.0)) < 0.1 and not s.fit.censored and s.usable
     assert cap.summarize(_synthetic(400.0, 2.0)).fit.censored
+    assert s.fit_listed is not None and s.by_rendering == {} and s.spread is None   # one rendering: no spread
     # a midpoint fitted past the grid is censored even when r(64) has dipped under .5 (a flat, slow curve)
     ks = list(cap.K_GRID)
     r = [1 / (1 + (k / 100) ** 0.6) for k in ks]
@@ -287,3 +296,12 @@ def test_run_scores_extra_row_files_with_one_load(tmp_path, tok, monkeypatch):
     with pytest.raises(SystemExit):
         cli_main(["run", "--model", "hf:stub", "--name", "m", "--batteries", "", "--out", str(out),
                   "--rows", "nofile"])
+
+
+def test_capacity_reads_each_rendering_and_their_spread():
+    rows = [dict(r, rendering="lines|q0") for r in _synthetic(4.0, 2.0)] + \
+           [dict(r, rendering="inline|q0") for r in _synthetic(16.0, 2.0)]
+    s = cap.summarize(rows)
+    assert set(s.by_rendering) == {"lines|q0", "inline|q0"}
+    assert abs(math.log(s.by_rendering["inline|q0"].k50 / s.by_rendering["lines|q0"].k50) - math.log(4)) < 0.2
+    assert s.spread is not None and 3.5 < s.spread < 4.6

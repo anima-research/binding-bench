@@ -123,7 +123,8 @@ def capacity(rows: Sequence[Row]) -> dict[str, Any]:
             "K50_d256_fixed": s.fit_d256_fixed.label() if s.fit_d256_fixed else None,
             "K50_d256_own": s.fit_d256_own.label() if s.fit_d256_own else None,
             "acc@8_d256": s.acc8_d256, "usable": s.usable, "multi_token_rows": s.multi_token_rows,
-            "curve": s.curve}
+            "curve": s.curve, "K50_listed": s.fit_listed.label() if s.fit_listed else None,
+            "K50_by_rendering": {k: f.label() for k, f in s.by_rendering.items()}, "K50_spread": s.spread}
 
 
 def fluid(rows: Sequence[Row]) -> dict[str, Any]:

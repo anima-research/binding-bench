@@ -14,6 +14,11 @@ Choices the paper leaves open, fixed here:
   - filler: templated neutral sentences (no corpus text, no names, no task words). D is measured in OUR tokenizer
     and recorded per row; every model gets the same strings.
   - grid: K ∈ {1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64}, D ∈ {0, 256}, 6 seeds × 40 trials per cell.
+  - renderings (:data:`RENDERINGS`): every trial is written four ways, the same names, tasks, query and filler:
+    the bindings one per line (``Name: task``) or inline (``Name: task; Name: task``), crossed with the query
+    ``The task for Name is:`` or ``Name's task is:``. The layout moves capacity by different amounts in different
+    models (pretraining's cross-model name test), so it is read as its own dimension (K50 per rendering, and the
+    spread across them), never mixed into one number unnoticed.
 
 Read-out (:func:`summarize`), per model, D = 0 unless noted:
   C     accuracy at K = 1 (the ceiling); b = chance
@@ -24,6 +29,8 @@ Read-out (:func:`summarize`), per model, D = 0 unless noted:
   AUC   mean of r(K) clipped to [0, 1] over the log-spaced K grid (threshold-free)
   D=256 K50 against the D = 0 ceiling (fixed) and against its own K = 1 ceiling (own; n/a when that ceiling is
         within .2 of chance)
+  listed  K50 against the listed-task guess: below K = 25 a model that picks among the tasks in the prompt scores 1/K,
+        not 1/25, so r(K) is also read with b = 1/min(K, 25) (the 1/25 reading flatters small K)
 Models whose C − b < .2 are reported but kept out of the size law (the paper's Pythia-70M rule).
 """
 
@@ -52,6 +59,8 @@ NAMES: tuple[str, ...] = (
 K_GRID: tuple[int, ...] = (1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64)
 D_GRID: tuple[int, ...] = (0, 256)
 SEEDS = 6
+LEADS: tuple[str, ...] = ("The task for {n} is:", "{n}'s task is:")
+RENDERINGS: tuple[tuple[str, int], ...] = (("lines", 0), ("lines", 1), ("inline", 0), ("inline", 1))
 TRIALS = 40
 MIN_HEADROOM = 0.2   # C − chance below this ⇒ excluded from the law / own-ceiling read
 
@@ -97,17 +106,19 @@ def generate(count_tokens: Callable[[str], int], k_grid: Sequence[int] = K_GRID,
                     names = rng.sample(NAMES, k)
                     tasks = _tasks_for(rng, k)
                     j = rng.randrange(k)
-                    body = "".join(f"{n}: {o}\n" for n, o in zip(names, tasks))
-                    dn = 0
-                    if d:
-                        block, dn = _filler(rng, d, count_tokens)
-                        body += f"\n{block}\n\n"
-                    rows.append({
-                        "id": f"cap1|K{k}|D{d}|s{seed}|t{t}",
-                        "prompt": body + f"The task for {names[j]} is:", "candidates": cands, "gold": tasks[j],
-                        "K": k, "D": d, "d_tokens": dn, "seed": seed, "qpos": j, "q_is_last": j == k - 1,
-                        "q_is_first": j == 0, "gold_repeats": tasks.count(tasks[j]) - 1,
-                    })
+                    block, dn = _filler(rng, d, count_tokens) if d else ("", 0)
+                    for layout, q in RENDERINGS:
+                        pairs = [f"{n}: {o}" for n, o in zip(names, tasks)]
+                        body = "".join(x + "\n" for x in pairs) if layout == "lines" else "; ".join(pairs) + "\n"
+                        if d:
+                            body += f"\n{block}\n\n"
+                        rows.append({
+                            "id": f"cap1|K{k}|D{d}|s{seed}|t{t}|{layout}|q{q}",
+                            "prompt": body + LEADS[q].format(n=names[j]), "candidates": cands, "gold": tasks[j],
+                            "K": k, "D": d, "d_tokens": dn, "seed": seed, "qpos": j, "q_is_last": j == k - 1,
+                            "q_is_first": j == 0, "gold_repeats": tasks.count(tasks[j]) - 1,
+                            "layout": layout, "lead": q, "rendering": f"{layout}|q{q}",
+                        })
     return rows
 
 
@@ -154,6 +165,14 @@ class Summary:
     acc8_d256: Optional[float]
     multi_token_rows: int
     curve: dict[int, float] = field(default_factory=dict)
+    by_rendering: dict[str, Fit] = field(default_factory=dict)      # K50 per rendering (D = 0)
+    fit_listed: Optional[Fit] = None                                  # K50 against the listed-task guess
+
+    @property
+    def spread(self) -> Optional[float]:
+        """max / min K50 over the renderings (censored fits count at the grid's end): the layout lever's size."""
+        ks = [min(f.k50, K_GRID[-1]) for f in self.by_rendering.values()]
+        return max(ks) / min(ks) if len(ks) > 1 and min(ks) > 0 else None
 
     @property
     def usable(self) -> bool:
@@ -173,7 +192,14 @@ def _norm(acc: Mapping[tuple[int, int], float], d: int, ceiling: float, chance: 
     return ks, [(acc[(k, d)] - chance) / max(ceiling - chance, 1e-9) for k in ks]
 
 
+def _fit_listed(acc: Mapping[tuple[int, int], float], ceiling: float, n_cands: int) -> Fit:
+    ks = sorted(k for (k, d) in acc if d == 0)
+    r = [(acc[(k, 0)] - 1 / min(k, n_cands)) / max(ceiling - 1 / min(k, n_cands), 1e-9) if k > 1 else 1.0 for k in ks]
+    return fit_logistic(ks, r)
+
+
 def summarize(rows: Sequence[Mapping[str, Any]]) -> Summary:
+    """The pooled reading over every rendering, plus K50 per rendering and against the listed-task guess."""
     if not rows:
         raise ValueError("no rows")
     chance = 1 / len(rows[0]["candidates"])
@@ -185,6 +211,16 @@ def summarize(rows: Sequence[Mapping[str, Any]]) -> Summary:
                 acc8=acc.get((8, 0)), ceiling_d256=acc.get((1, 256)), fit_d256_fixed=None, fit_d256_own=None,
                 acc8_d256=acc.get((8, 256)), multi_token_rows=sum(bool(r.get("multi_token")) for r in rows),
                 curve=dict(zip(ks, r0)))
+    s.fit_listed = _fit_listed(acc, c0, len(rows[0]["candidates"]))
+    groups: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for r in rows:
+        groups[str(r.get("rendering", "lines|q0"))].append(r)
+    if len(groups) > 1:
+        for name, sub in sorted(groups.items()):
+            a = _acc(sub)
+            if (1, 0) in a:
+                kk, rr = _norm(a, 0, a[(1, 0)], chance)
+                s.by_rendering[name] = fit_logistic(kk, rr)
     if s.ceiling_d256 is not None:
         k2, rf = _norm(acc, 256, c0, chance)
         s.fit_d256_fixed = fit_logistic(k2, rf)

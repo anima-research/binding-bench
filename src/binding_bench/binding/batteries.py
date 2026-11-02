@@ -60,8 +60,8 @@ BATTERIES: dict[str, Battery] = {b.name: b for b in (
     Battery("frame-ladder-v1", "rows", "r2/frame-ladder-v1.jsonl",
             "15ea952e32497a2320d9fb611acecc6181ae7bae65594c8f117e277533d60432", "frame",
             "frame ladder: the swapdyn 0-shot items with one cue per rung (R0 as built … R4 no I / you)"),
-    Battery("capacity-v1", "rows", "capacity-v1.jsonl",
-            "c7241ec026e40054c21bef0ec44465848e3758da40ff7b183a7ada4a89e3c88d", "capacity",
+    Battery("capacity-v1", "rows", "r2/capacity-v1.jsonl",
+            "602e08196d2c66e868c9b4b57138e8f9e6149a11a2520a0d0385f61310ca3e89", "capacity",
             "binding capacity (K50, after arXiv 2609.30634)"),
     Battery("fluid-v1-morph", "rows", "r2/fluid-v1-morph.jsonl",
             "c54e445339f73b429764fbf2cad1c6e31ffa089a9878770e2602a3bd9af6b43c", "fluid-morph",
@@ -128,6 +128,7 @@ class Pin:
 # Every earlier pin of a battery whose bytes were upgraded in place under the same name, oldest first. A number
 # recorded against one of these names before the upgrade resolves here to its exact file; the file stays at its path.
 PREVIOUS_PINS: dict[str, tuple[Pin, ...]] = {
+    "capacity-v1": (Pin("capacity-v1.jsonl", "c7241ec026e40054c21bef0ec44465848e3758da40ff7b183a7ada4a89e3c88d", None),),
     "joinlite-v1": (Pin("joinlite-v1.jsonl", "1e20c12961803a8a459b302d7ece30c34c7d4535f871330dba51020699facb90", None),),
     "swapdyn-v1": (Pin("swapdyn-v1.jsonl", "8ddab1262a2fa340e559fbbcd966b2c20a2acdfade2bb888e55034851810bdd3", None),),
     "stage5-decomp-v1": (Pin("stage5-decomp-v1.jsonl", "c08b40150b84e3e2e6d5e9918a8b7c6b5986230545f730b06b1cd2d8bc3db666", None),),
