@@ -107,10 +107,10 @@ BATTERIES: dict[str, Battery] = {b.name: b for b in (
             ("setbind", "answer", "adjacency", "codevarmut"),
             render_sha256="765f81db6c0d77fc7f833fb91c846116d610a61ef4c4304b17416f3a02fe41e1"),
     Battery("bp-v3.2", "bindprobes", "r2/bindprobes-v3.2/items.jsonl",
-            "7eb9da741d9df65176c7006bfaf5709beff42d4b2bca2c2d304da149b9d83e6f", None,
+            "959b54969ac30401b3823f4dc2996b5c29f98a43a1e77867d166fcfe9bb6f88c", None,
             "bindprobes v3.2: setbind / answer / adjacency / codevarmut, controlled recency and role shortcuts",
             ("setbind", "answer", "adjacency", "codevarmut"),
-            render_sha256="d6e2669b3e2deb72842bfac1338b88165d91a40267d9cba8299dccff216756c6"),
+            render_sha256="4a0d7bfcfb73baa9de87dff57048c23988858bceca5ffa9669455d0813f13610"),
     Battery("bp-deixis-v2", "bindprobes", "r2/bindprobes-deixis-v2-full/items.jsonl",
             "2a68cb383ca488287641b5fa6bbe08bf63f0a33c70421e9a326b3e9b71ac7b61", None,
             "bindprobes deixis v2 full", ("deixis",),
@@ -141,7 +141,8 @@ PREVIOUS_PINS: dict[str, tuple[Pin, ...]] = {
     "formupdate-v3": (Pin("formupdate-v3.jsonl", "5cb5f48f34f10746c5c4427c15a8b4190c0b775018cbc2da681054cd89b4be87", None),),
     "bp-deixis-lite": (Pin("bindprobes-deixis-lite/items.jsonl", "229e7ac377ff2ec5ef298ecdee5c27667f9c97d86ba2337fb5e411aac9167c3e", '71fd836f43ed7732a17d70c738d4bacba7f6ae74b56692e438f45fe6eda4111a'),),
     "bp-profile": (Pin("bindprobes-items/items.jsonl", "7bfab8bff499667846fd9c9522cfbb4147476626bdd37bb7d702a2f55f4f9776", '58e1b17bf606dcfa6bcb336b86c4aca205bc546e550f5b92c65481da7818421b'),),
-    "bp-v3.2": (Pin("bindprobes-v3.2/items.jsonl", "ee5e827bd4698623e96b906480a8652999c7d8884d69f783e29b072d8cfc13e5", '1d12e4f3a8702379aceef5b18593e8f10850054c4e27081dda73e62dd8abca3b'),),
+    "bp-v3.2": (Pin("bindprobes-v3.2/items.jsonl", "ee5e827bd4698623e96b906480a8652999c7d8884d69f783e29b072d8cfc13e5", '1d12e4f3a8702379aceef5b18593e8f10850054c4e27081dda73e62dd8abca3b'),
+                Pin("r2/bindprobes-v3.2/items-r2a.jsonl", "7eb9da741d9df65176c7006bfaf5709beff42d4b2bca2c2d304da149b9d83e6f", "d6e2669b3e2deb72842bfac1338b88165d91a40267d9cba8299dccff216756c6")),
     "bp-deixis-v2": (Pin("bindprobes-deixis-v2-full/items.jsonl", "08151e66c4798288c7b1f471aaeb46d07e3d21acd5d279e8d8c137ba3bd35234", '2b3330a1c32ac92e8c3bbba8e4a8d50b1d8d3ca999c837347fbe95ae763c2345'),),
 }
 

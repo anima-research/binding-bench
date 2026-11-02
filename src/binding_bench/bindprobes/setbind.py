@@ -64,9 +64,13 @@ from binding_bench.bindprobes.base import Cell, Item, for_version, rejection, th
 from binding_bench.bindprobes.pools import NON_COUNTABLE, Pools, countable, indefinite, letter_article
 
 FAMILY = "setbind"
-VERSION = 3
+VERSION = 4
 # the article of a distractor sentence, per generation
-ARTICLE: dict[int, Callable[[str], str]] = {1: letter_article, 2: indefinite, 3: indefinite}
+ARTICLE: dict[int, Callable[[str], str]] = {1: letter_article, 2: indefinite, 3: indefinite, 4: indefinite}
+# generation 4 on: every base item is emitted in these paired renderings (meta.pair_id = the base id), so a reading
+# can be cut by layout (sentences as one paragraph / one per line) and by the query's connective ("So [now] X has
+# the" / "X has the"); earlier generations render as one paragraph with the connective
+VARIANTS: tuple[str, ...] = ("prose", "lines", "prose_bare", "lines_bare")
 KS = (1, 2, 3)
 LAYOUTS = ("joint", "split")
 ES = (0, 2)
@@ -83,7 +87,8 @@ ERROR_TYPES = ("wrong_owner", "stale", "distractor", "other", "other_held")
 BALANCE_TOL = 0.05
 
 
-class Spec(TypedDict):
+class Spec(TypedDict, total=False):
+    variant: str                    # generation 4 on: one of VARIANTS
     people: list[str]               # scene order (labels)
     sentences: list[list[Any]]      # ["bind", person, [objs], also: bool] | ["free", obj] | ["give", g, obj, r]
     query: str
@@ -176,6 +181,8 @@ def _sentence(s: Sequence[Any], version: int = VERSION) -> str:
 
 
 def _lead(spec: Spec) -> str:
+    if str(spec.get("variant", "prose")).endswith("_bare"):
+        return f"{spec['query']} has the"
     has_give = any(s[0] == "give" for s in spec["sentences"])
     return f"So now {spec['query']} has the" if has_give else f"So {spec['query']} has the"
 
@@ -183,7 +190,8 @@ def _lead(spec: Spec) -> str:
 def render(item: Item, with_answer: bool) -> str:
     spec: Spec = item.spec  # type: ignore[assignment]
     v = version_of(item)
-    text = " ".join(_sentence(s, v) for s in spec["sentences"]) + " " + _lead(spec)
+    joiner = "\n" if str(spec.get("variant", "prose")).startswith("lines") else " "
+    text = joiner.join([_sentence(s, v) for s in spec["sentences"]] + [_lead(spec)])
     return f"{text} {item.gold}." if with_answer else text
 
 
@@ -193,9 +201,11 @@ def labels(item: Item) -> list[str]:
 
 # ── Items ──────────────────────────────────────────────────────────────────────
 
-def build(item_id: str, cell: Cell, spec: Spec, version: int = VERSION) -> Item:
+def build(item_id: str, cell: Cell, spec: Spec, version: int = VERSION, pair_id: Optional[str] = None) -> Item:
     """Item from a spec; ``version`` is the generation it renders as (``relabel`` keeps the
     source item's)."""
+    if version >= 4 and spec.get("variant") not in VARIANTS:
+        raise ValueError(f"{item_id}: generation {version} needs a variant in {VARIANTS}, got {spec.get('variant')!r}")
     mentions = _mentions(spec)
     cands = list(dict.fromkeys(mentions))
     gs = gold_set(spec)
@@ -209,8 +219,26 @@ def build(item_id: str, cell: Cell, spec: Spec, version: int = VERSION) -> Item:
                     "first_k_is_set": set(list(dict.fromkeys(mentions))[:len(gs)]) == set(gs),
                     "n_transfers": sum(1 for s in spec["sentences"] if s[0] == "give"),
                     "layout": cell[1]})
+    if version >= 4:
+        it.meta.update({"variant": spec["variant"], "pair_id": pair_id or item_id})
     it.gold = simulate(it)
     return it
+
+
+def expand(base: Item) -> list[Item]:
+    """Generation 4 on: the base item in every rendering of :data:`VARIANTS` (paired by ``pair_id``), each with its
+    exemplars in the same rendering; an earlier generation's item is itself."""
+    if version_of(base) < 4:
+        return [base]
+    out = []
+    for v in VARIANTS:
+        it = build(f"{base.item_id}_{v}", tuple(base.cell), {**base.spec, "variant": v}, pair_id=base.item_id)  # type: ignore[typeddict-item]
+        it.meta["shots_disjoint"] = base.meta.get("shots_disjoint")
+        it.shots = [build(f"{s.item_id}_{v}", tuple(s.cell), {**s.spec, "variant": v}, pair_id=s.item_id).to_dict()  # type: ignore[typeddict-item]
+                    for s in base.shot_items()]
+        it.collide_maps = [dict(m) for m in base.collide_maps]
+        out.append(it)
+    return out
 
 
 def exact_matched(cell: Sequence[Any]) -> bool:
@@ -319,7 +347,7 @@ def _draw(rng: random.Random, cell: Cell, pools: Pools, item_id: str,
         return None
     spec: Spec = {"people": people, "sentences": sents, "query": q, "designated": rng.choice(final)}
     try:
-        it = build(item_id, cell, spec)
+        it = build(item_id, cell, {**spec, "variant": "prose"} if VERSION >= 4 else spec)
     except ValueError:
         return None
     if it.meta["k"] != k or len(it.candidates) != C_TOTAL:
@@ -360,7 +388,10 @@ def relabel(item: Item, mapping: Mapping[str, str], target: Optional[Item] = Non
     new: Spec = {"people": [m[p] for p in spec["people"]],
                  "sentences": [ren(s) for s in spec["sentences"]], "query": m[spec["query"]],
                  "designated": spec["designated"]}
-    out = build(f"{item.item_id}_collide", tuple(item.cell), new, version=version_of(item))
+    if "variant" in spec:
+        new["variant"] = spec["variant"]
+    out = build(f"{item.item_id}_collide", tuple(item.cell), new, version=version_of(item),
+                pair_id=item.meta.get("pair_id"))
     if set(out.meta["gold_set"]) != set(item.meta["gold_set"]):
         raise ValueError(f"{item.item_id}: re-label changed the gold set")
     return out

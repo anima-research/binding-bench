@@ -309,3 +309,20 @@ def test_fair_exemplars_match_the_variant_and_the_pair():
             assert not {w for s in shots for w in items._words(items.family(f), s)} & items._words(items.family(f), it)
             by.setdefault(str(it.meta["pair_id"]), set()).add(tuple(str(s.meta["pair_id"]) for s in shots))
         assert all(len(v) == 1 for v in by.values()), f
+
+
+def test_setbind_renderings_differ_only_in_layout_and_connective():
+    """Generation 4: the four renderings of a base item share every sentence; lines vs prose is the joiner, bare vs
+    connective is the query's opening."""
+    from binding_bench.bindprobes import setbind
+    its = items.generate_family("setbind", SPLIT, 2, seed=11)
+    by: dict[str, dict[str, Item]] = {}
+    for it in its:
+        by.setdefault(it.meta["pair_id"], {})[it.meta["variant"]] = it
+    for pair in by.values():
+        assert set(pair) == set(setbind.VARIANTS)
+        t = {v: setbind.render(it, False) for v, it in pair.items()}
+        assert t["lines"].replace("\n", " ") == t["prose"] and t["lines_bare"].replace("\n", " ") == t["prose_bare"]
+        q = pair["prose"].spec["query"]
+        assert t["prose_bare"].endswith(f". {q} has the") and re.search(r"So (now )?\w+ has the$", t["prose"])
+        assert len({it.gold for it in pair.values()}) == 1
