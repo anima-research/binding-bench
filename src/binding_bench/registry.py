@@ -265,3 +265,44 @@ PANEL_RELIABILITY: dict[str, SliceReliability] = {r.reading: r for r in (
 def evals_for(battery: str) -> list[Eval]:
     """The registry rows a pinned battery carries."""
     return [e for e in REGISTRY.values() if battery in e.batteries]
+
+
+# ── The staircase: which batteries the five stages are read from ─────────────────────────────────────────────────────
+# The stages (the Binding Atlas): 1 static I binds; 2 "you" reads as the speaker (you = me); 3 static "you" binds;
+# 4 "you" collapses back onto the speaker once objects change hands; 5 dynamic "you" binds. A stage is a swap-shift
+# verdict on a gauge (above +.02 binds, below -.02 inverts). Roles:
+#   gauge       the stage is defined by this battery's swap shift
+#   diagnostic  takes a stage apart (which part of the input carries it); does not move the stage verdict
+#   supporting  the same construct as a stage, read as accuracy (Atlas columns); not a stage verdict
+# A battery absent from STAGE_MAP touches no stage.
+
+
+@dataclass(frozen=True)
+class StageUse:
+    battery: str
+    stages: tuple[int, ...]
+    role: Literal["gauge", "diagnostic", "supporting"]
+    reading: str
+
+
+STAGE_MAP: tuple[StageUse, ...] = (
+    StageUse("joinlite-v1", (1,), "gauge", "static I: self query, speaker swap (qkind self, arm swap vs orig)"),
+    StageUse("joinlite-v1", (2, 3), "gauge", "static you: P2 addressee query, speaker swap (below -.02 = stage 2, "
+                                               "above +.02 = stage 3)"),
+    StageUse("swapdyn-v1", (4, 5), "gauge", "dynamic you after transfers, speaker swap, 0shot (below -.02 = stage 4, "
+                                              "above +.02 = stage 5) and 3shot"),
+    StageUse("stage5-decomp-v1", (5,), "diagnostic", "the swapdyn items rewritten along one axis each"),
+    StageUse("stage5-decomp-core", (5,), "diagnostic", "the core decomposition variants"),
+    StageUse("frame-ladder-v1", (5,), "diagnostic", "the cold two-speaker you, one cue per rung"),
+    StageUse("bp-deixis-v2", (1, 3, 5), "supporting", "Atlas 'I / you after hand-offs' and 'you among three' columns"),
+    StageUse("bp-deixis-lite", (5,), "supporting", "owner query after hand-offs"),
+    StageUse("bp-v3.2", (3, 5), "supporting", "answer (me / you from the reply) and adjacency (structural you)"),
+)
+
+# The bytes each stage gauge was last read on. A change to a gauge battery's pin fails
+# ``tests/test_registry_stages.py`` until this table is updated with it, so a change that can move the staircase
+# is never silent: rerun the stage readout on the panel and record the before / after with the new pin.
+STAGE_GAUGE_PINS: Mapping[str, str] = {
+    "joinlite-v1": "82cd75aa52e389fbf9886181ed3e5cabaeccc9a5eda51838d96e6d692b8b048d",
+    "swapdyn-v1": "fb508474604a56ce8b5b09def73a3f951c06a481758d2825ac54c5ca2b33b0c4",
+}
