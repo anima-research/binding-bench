@@ -57,3 +57,9 @@ def test_riders_structural_rules_follow_the_item():
     assert m0 and all(p.extra["declared_contents"] == p.gold for p in m0)
     rep = S.report(probes)
     assert rep["code|m=0"].kappa["declared_contents"] == pytest.approx(1.0)
+
+
+def test_gold_distance_counts_back_from_the_query():
+    p = _probe("Ann has the cup. Bo has the pen.\nRight now Ann is holding the", ("cup", "pen"), "cup")
+    assert S.gold_distance(p) == len("cup. Bo has the pen.")
+    assert S.gold_distance(_probe("Ann waves.\nShe has the", ("cup", "pen"), "cup")) is None

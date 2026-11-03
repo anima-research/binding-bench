@@ -178,6 +178,13 @@ def riders_probes(lite_only: bool = False) -> list[Probe]:
     return out
 
 
+def gold_distance(p: Probe) -> Optional[int]:
+    """Characters from the gold's last mention in the body to the body's end (where the query starts); None when the
+    body never names the gold."""
+    pos = _pos(p.body, p.gold)
+    return len(p.body) - max(pos) if pos else None
+
+
 def picks(probes: Sequence[Probe]) -> dict[str, dict[str, Optional[str]]]:
     """``{probe id: {policy: pick or None}}``."""
     out: dict[str, dict[str, Optional[str]]] = {}
