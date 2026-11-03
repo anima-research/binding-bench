@@ -187,7 +187,12 @@ REGISTRY: dict[str, Eval] = {e.name: e for e in (
     Eval("formupdate", "form-vs-update", "binding", "forming vs updating a binding, paired per base item",
          ("formupdate-v3", "formupdate-v2", "formupdate-v1"), "python -m binding_bench.binding gen-formupdate",
          ("paired cost, per register (formupdate-v3)",), None,
-         (Flag("formupdate-v2 update cost (B - C), pooled over registers",
+         (Flag("formupdate-v3 update cost (B - C), per register",
+               "register-dependent: positive in both registers (updating the queried holder is the harder update), "
+               "and larger in code than in prose by 20 points or more; the v2 prose sign reversal is gone (0/8)",
+               "code above prose 4/8 (tsumugi, Qwen2.5-7B, Llama-3.1-8B, OLMo-2-7B); cost above 0 in code 8/8, "
+               "in prose 6/8", "item-matched register swap"),
+          Flag("formupdate-v2 update cost (B - C), pooled over registers",
                "register-dependent: it moves by 20 points or more between prose and code, and in prose it reverses sign "
                "(updating the queried holder is easier than updating the others)",
                "6/8 models; sign reversed on 4/8 (tsumugi, OLMo-2-1B, Qwen2.5-7B, OLMo-2-7B)",
