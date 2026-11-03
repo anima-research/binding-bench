@@ -156,7 +156,7 @@ PHRASES: dict[str, PhraseSet] = {s.name: s for s in (
                                Phrase("The {o} got stowed in the {p} by", _S))),
     PhraseSet("q_knot_latest", (Phrase("The {o} had been carried to the {p} by", _S),
                                 Phrase("The {o} was carried to the {p} by", _S),
-                                Phrase("The {o} got carried to the {p} by", _S))),
+                                Phrase("The {o} was brought to the {p} by", _S))),
 )}
 FORBID: frozenset[str] = frozenset({"implies_change", "ownership", "matches_query"})
 
@@ -397,7 +397,7 @@ def gate(item: Item) -> None:
         text = render_story(item, r)
         for p in item.places:
             assert f" {p}" in text, f"{item.item_id}/r{r}: place {p} never mentioned"
-        for w in (" now ", " still ", " again ", " anymore", " stowed", " stow", " carried", " carry"):
+        for w in (" now ", " still ", " again ", " anymore", " stowed", " stow", " carried", " carry", " brought", " bring"):
             assert w not in f" {text} ", f"{item.item_id}/r{r}: banned word {w.strip()!r}"
 
 

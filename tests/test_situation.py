@@ -83,7 +83,7 @@ def test_knot_questions_never_share_their_verb_with_the_story(items):
         assert k.kind == f"knot_{it.meta['knot']}"
         for r in range(si.N_RENDERINGS):
             story = si.render_story(it, r).lower()
-            assert "stow" not in story and "carr" not in story
+            assert "stow" not in story and "carr" not in story and "brought" not in story
 
 
 def test_renderings_differ_only_in_wording(items):
