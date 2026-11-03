@@ -193,7 +193,7 @@ REGISTRY: dict[str, Eval] = {e.name: e for e in (
                "register-dependent: positive in both registers (updating the queried holder is the harder update), "
                "and larger in code than in prose by 20 points or more; the v2 prose sign reversal is gone (0/8)",
                "code above prose 4/8 (tsumugi, Qwen2.5-7B, Llama-3.1-8B, OLMo-2-7B); cost above 0 in code 8/8, "
-               "in prose 6/8", "item-matched register swap"),
+               "in prose 6/8", "register comparison, matched on the K × U cells (prose and code are separate draws)"),
           Flag("formupdate-v2 update cost (B - C), pooled over registers",
                "register-dependent: it moves by 20 points or more between prose and code, and in prose it reverses sign "
                "(updating the queried holder is easier than updating the others)",
