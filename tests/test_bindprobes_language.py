@@ -275,8 +275,9 @@ def test_chat_wordings_per_generation():
         deixis._deictic_line(own, "holding")
     give = {"ev": "give", "speaker": "Ada", "voc": "Ken", "obj": "cup", "form": "yours"}
     assert deixis._deictic_line(give, "owning")[0] == "Ada: Ken, my cup is yours now."
-    assert deixis.WORDING == {2: "owning", 3: "holding", 4: "holding"} and answer.WORDING == deixis.WORDING
-    assert deixis.NEUTRAL_LEADS == {2: False, 3: False, 4: True}
+    assert deixis.WORDING == {2: "owning", 3: "holding", 4: "holding", 5: "holding_trailing"}
+    assert answer.WORDING == {k: v for k, v in deixis.WORDING.items() if k <= 4}
+    assert deixis.NEUTRAL_LEADS == {2: False, 3: False, 4: True, 5: True}
     assert answer.QUERY_WORDING[4] == ("Quick check: who has the {o}?", "So the {o} is with")
     assert adjacency.WORDING[1][0] == "owning" and "yours" in adjacency.WORDING[1][1]
     assert pools.letter_article("hour") == "a" and pools.indefinite("hour") == "an"

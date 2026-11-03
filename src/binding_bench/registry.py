@@ -305,5 +305,5 @@ STAGE_MAP: tuple[StageUse, ...] = (
 # is never silent: rerun the stage readout on the panel and record the before / after with the new pin.
 STAGE_GAUGE_PINS: Mapping[str, str] = {
     "joinlite-v1": "82cd75aa52e389fbf9886181ed3e5cabaeccc9a5eda51838d96e6d692b8b048d",
-    "swapdyn-v1": "fb508474604a56ce8b5b09def73a3f951c06a481758d2825ac54c5ca2b33b0c4",
+    "swapdyn-v1": "5ab4b82502b9fc81d41443dbe34faf42e3427b5b2a5c22900f5434875ab017e9",
 }

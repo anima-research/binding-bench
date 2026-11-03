@@ -24,7 +24,10 @@ Addressee rule (the unambiguity law): P = 2 -> "you" is the other speaker and no
 utterance carries a vocative (two speakers need none, so it is always dropped);
 P = 3 -> EVERY utterance containing you/your/yours or
 an imperative opens with a vocative naming the addressee (``Here, Ben, take ...``
-counts: the vocative follows the interjection). ``resolve_addressee`` is the one
+counts: the vocative follows the interjection), or (generation 5 on) closes with one
+(``My cup is in your hand now, Ben.``). Generation 5 also opens half the P = 3
+declarations with a vocative (``Ben, the cup is in my hand.``): the holder is the
+speaker, while the nearest name to the object is the vocative. ``resolve_addressee`` is the one
 place pronoun semantics live; :func:`explicit_events` raises on any unresolvable
 or ambiguous "you", :func:`run` on every violated precondition.
 
@@ -122,7 +125,7 @@ from binding_bench.bindprobes.base import (Cell, Item, cell_key, for_version, na
 from binding_bench.bindprobes.pools import PLURAL_FORM, Pools, singular
 
 FAMILY = "deixis"
-VERSION = 4                       # meta.deixis_version; items' id/seed tag "deixis-v4"
+VERSION = 5                       # meta.deixis_version; items' id/seed tag "deixis-v5"
 PS = (2, 3)
 ES = (1, 2, 3)
 QKINDS = ("owner", "self", "addressee")
@@ -148,6 +151,7 @@ GIVE_ORDER = ("giving", "here", "hand")
 _YOU = re.compile(r"\byou(?:r|rs|'re)?\b", re.IGNORECASE)
 _IMPERATIVE = re.compile(r"^(?:take|give)\b", re.IGNORECASE)
 _HERE = re.compile(r"^Here, ")
+_TRAILING_VOC = re.compile(r", ([A-Z]\w*)\.$")
 _PRONOUNS = re.compile(r"\b(?:I|I'm|I'll|me|my|mine|you|your|yours|you're|he|him|his|she|"
                        r"her|hers|they|them|their|it)\b", re.IGNORECASE)
 
@@ -220,6 +224,9 @@ def explicit_events(spec: Spec) -> list[dict[str, Any]]:
         if kind == "declare":
             if s not in people:
                 raise ValueError(f"event {k}: speaker {s!r} not in the chat")
+            v = ev.get("voc")
+            if v is not None and (len(people) != 3 or v == s or v not in people):
+                raise ValueError(f"event {k}: a declaration's vocative {v!r} must name another of three people")
             out.append({"ev": "declare", "owner": s, "obj": ev["obj"]})
         elif kind == "give":
             a = resolve_addressee(people, s, ev.get("voc"))
@@ -360,13 +367,26 @@ OWNING_GIVE_FORMS: dict[str, tuple[str, str]] = {
     "here": GIVE_FORMS["here"],
     "yours": ("{v}, my {o} is yours now.", "My {o} is yours now."),
 }
+# Generation 5 on (P = 3): the "hand" give closes on its vocative, so the speaker's name, not the addressee's, is the
+# name nearest the object, and "your" must be resolved to reach the holder.
+GIVE_FORMS_TRAILING: dict[str, tuple[str, str]] = {
+    "giving": GIVE_FORMS["giving"],
+    "here": GIVE_FORMS["here"],
+    "hand": ("My {o} is in your hand now, {v}.", "My {o} is in your hand now."),
+}
 Wording = tuple[dict[str, str], dict[str, tuple[str, str]]]
 WORDINGS: dict[str, Wording] = {"holding": (DECLARE_FORMS, GIVE_FORMS),
+                                "holding_trailing": (DECLARE_FORMS, GIVE_FORMS_TRAILING),
                                 "owning": (OWNING_DECLARE_FORMS, OWNING_GIVE_FORMS)}
-WORDING: dict[int, str] = {2: "owning", 3: "holding", 4: "holding"}    # deixis version -> wording
+WORDING: dict[int, str] = {2: "owning", 3: "holding", 4: "holding", 5: "holding_trailing"}    # deixis version -> wording
 # deixis version -> the query leads that state no change (generation 4 on): the owner query and the third
 # variant's queries read the same whether or not the queried thing moved
-NEUTRAL_LEADS: dict[int, bool] = {2: False, 3: False, 4: True}
+NEUTRAL_LEADS: dict[int, bool] = {2: False, 3: False, 4: True, 5: True}
+# deixis version -> the third variant narrates the "here" and "hand" gives recipient-first ("R gets the o from G"), so
+# the giver is the name nearest the object there (generation 5 on)
+THIRD_GETS: dict[int, bool] = {2: False, 3: False, 4: False, 5: True}
+GETS_FORMS: frozenset[str] = frozenset({"here", "hand"})
+P_ADDRESSED_DECLARE = 0.5         # P = 3, generation 5 on: a declaration's share that opens with a vocative
 
 
 def gives_back(prev: Optional[Mapping[str, Any]], giver: str, recipient: str, obj: str) -> bool:
@@ -394,7 +414,11 @@ def _deictic_line(ev: Mapping[str, Any], wording: str = "holding") -> Segment:
     if ev.get("form") not in (declare if kind == "declare" else give):
         raise ValueError(f"{kind} form {ev.get('form')!r} is not in the {wording!r} wording")
     if kind == "declare":
-        return _fill("{_s}: " + declare[ev["form"]], _s=s, o=ev["obj"])
+        form = declare[ev["form"]]
+        if ev.get("voc"):             # an addressed declaration: "Ken, the cup is in my hand." (the holder is the speaker)
+            return _fill("{_s}: {v}, " + (form if form.startswith("I ") else form[0].lower() + form[1:]),
+                         _s=s, v=ev["voc"], o=ev["obj"])
+        return _fill("{_s}: " + form, _s=s, o=ev["obj"])
     if kind == "give":
         with_voc, bare = give[ev["form"]]
         if ev.get("voc"):
@@ -403,9 +427,10 @@ def _deictic_line(ev: Mapping[str, Any], wording: str = "holding") -> Segment:
     raise ValueError(f"unknown event {kind!r}")
 
 
-def _third_sentences(events: Sequence[Mapping[str, Any]]) -> list[Segment]:
+def _third_sentences(events: Sequence[Mapping[str, Any]], gets: bool = False) -> list[Segment]:
     """dialogue-family prose: ``X has the a and the b.`` (consecutive declarations
-    by one person merged, as dialogue's intro does) and ``G gives the o to R.``"""
+    by one person merged, as dialogue's intro does) and ``G gives the o to R.`` (``gets``: the
+    :data:`GETS_FORMS` gives as ``R gets the o from G.``)"""
     out: list[Segment] = []
     k = 0
     while k < len(events):
@@ -417,6 +442,8 @@ def _third_sentences(events: Sequence[Mapping[str, Any]]) -> list[Segment]:
                 k += 1
                 objs.append(events[k]["obj"])
             out.append((f"{ev['owner']} has {the_list(objs)}.", [ev["owner"]] + objs))
+        elif ev["ev"] == "give" and gets and ev.get("form") in GETS_FORMS:
+            out.append(_fill("{r} gets the {o} from {g}.", r=ev["recipient"], o=ev["obj"], g=ev["giver"]))
         elif ev["ev"] == "give":
             out.append(_fill("{g} gives the {o} to {r}.", g=ev["giver"], o=ev["obj"],
                              r=ev["recipient"]))
@@ -452,7 +479,7 @@ def _lead(spec: Spec, neutral: bool) -> Segment:
     return _fill("{s}: Right now you're holding the", s=q["speaker"])
 
 
-def _segments(spec: Spec, wording: str, neutral: bool) -> tuple[list[Segment], str]:
+def _segments(spec: Spec, wording: str, neutral: bool, gets: bool = False) -> tuple[list[Segment], str]:
     """(scene + body + lead segments, the joiner): chat lines for deictic/twin, one
     prose paragraph for third."""
     people = spec["people"]
@@ -460,7 +487,7 @@ def _segments(spec: Spec, wording: str, neutral: bool) -> tuple[list[Segment], s
     slots = name_list([f"{{p{i}}}" for i in range(len(people))])
     if spec["variant"] == "third":
         segs = [_fill(slots + " are sitting at a table.", **names)]
-        segs += _third_sentences(spec["events"])
+        segs += _third_sentences(spec["events"], gets)
         return segs + [_lead(spec, neutral)], " "
     segs = [_fill("A chat between " + slots + ".", **names)]
     segs += [_deictic_line(ev, wording) for ev in spec["events"]]
@@ -470,7 +497,7 @@ def _segments(spec: Spec, wording: str, neutral: bool) -> tuple[list[Segment], s
 def _rendered(spec: Spec, version: int = VERSION) -> tuple[str, list[str]]:
     """(text without the answer, slot values in text order), in generation ``version``'s wording."""
     segs, joiner = _segments(spec, for_version(WORDING, version, FAMILY),
-                             for_version(NEUTRAL_LEADS, version, FAMILY))
+                             for_version(NEUTRAL_LEADS, version, FAMILY), for_version(THIRD_GETS, version, FAMILY))
     return joiner.join(t for t, _ in segs), [s for _, ss in segs for s in ss]
 
 
@@ -510,7 +537,7 @@ def check_surface(item: Item) -> None:
             raise ValueError(f"{item.item_id}: not a 'Name: utterance' line: {ln!r}")
         spk, utt = m.groups()
         rest = _HERE.sub("", utt)
-        v = re.match(r"^(\w+), ", rest)
+        v = re.match(r"^(\w+), ", rest) or _TRAILING_VOC.search(rest)   # leading, or (generation 5 on) closing
         if v and (v.group(1) not in people or v.group(1) == spk):
             raise ValueError(f"{item.item_id}: vocative is not another participant: {ln!r}")
         if len(people) == 3 and not v and (_YOU.search(utt) or _IMPERATIVE.match(rest)):
@@ -633,6 +660,10 @@ def _draw(rng: random.Random, cell: Cell, pools: Pools, item_id: str,
     owner = dict(first)
     events: list[dict[str, Any]] = [{"ev": "declare", "speaker": owner[o], "obj": o,
                                      "form": rng.choice(tuple(DECLARE_FORMS))} for o in objs]
+    if p == 3:                        # addressed declarations: the nearest name is not the holder
+        for ev in events:
+            if rng.random() < P_ADDRESSED_DECLARE:
+                ev["voc"] = rng.choice([x for x in people if x != ev["speaker"]])
     start = rng.randrange(len(GIVE_ORDER))
     prev: Optional[dict[str, Any]] = None
     for i in range(e):

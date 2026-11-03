@@ -39,8 +39,8 @@ def _give(s: str, o: str, voc: Optional[str] = None, form: str = "giving") -> di
     return {"ev": "give", "speaker": s, "voc": voc, "obj": o, "form": form}
 
 
-def _build(spec: deixis.Spec, cell: tuple[int, int, str]) -> Item:
-    return deixis.build("x0", cell, spec)
+def _build(spec: deixis.Spec, cell: tuple[int, int, str], version: int = deixis.VERSION) -> Item:
+    return deixis.build("x0", cell, spec, version=version)
 
 
 # P=3 scene: Ken gives Rosa his cup; Rosa gives Ada her bell; Ada gives Ken the lamp.
@@ -53,7 +53,7 @@ P3_EVENTS = [_decl("Ada", "lamp"), _decl("Ken", "cup", "hand"), _decl("Rosa", "b
 # ── simulator: give chains + exact renders ─────────────────────────────────────
 
 def test_give_chain_and_exact_render_p3():
-    it = _build(_spec(P3, OBJS3, P3_EVENTS, {"kind": "self", "speaker": "Rosa"}), (3, 3, "self"))
+    it = _build(_spec(P3, OBJS3, P3_EVENTS, {"kind": "self", "speaker": "Rosa"}), (3, 3, "self"), version=4)
     assert it.gold == "cup" and it.candidates == OBJS3
     assert deixis.holdings(it.spec) == {"Ada": ["bell"], "Ken": ["lamp"], "Rosa": ["cup"]}
     assert deixis.render(it, False) == (
@@ -66,13 +66,35 @@ def test_give_chain_and_exact_render_p3():
         "Ada: Ken, I'm giving you my lamp.\n"
         "Rosa: Right now I'm holding the")
     assert deixis.render(it, True).endswith("Rosa: Right now I'm holding the cup.")
-    third = deixis.build("t0", (3, 3, "self"), deixis.to_third(it.spec))
+    third = deixis.build("t0", (3, 3, "self"), deixis.to_third(it.spec), version=4)
     assert deixis.render(third, False) == (
         "Ada, Ken and Rosa are sitting at a table. Ada has the lamp. Ken has the cup. "
         "Rosa has the bell. Ken gives the cup to Rosa. Rosa gives the bell to Ada. "
         "Ada gives the lamp to Ken. Right now Rosa is holding the")
     assert deixis.render(third, True).endswith("holding the cup.") and third.gold == "cup"
     assert third.mention_order == it.mention_order
+    # generation 5: the "hand" give closes on its vocative; the third narrates "here" / "hand" gives recipient-first
+    v5 = _build(_spec(P3, OBJS3, P3_EVENTS, {"kind": "self", "speaker": "Rosa"}), (3, 3, "self"))
+    assert "Rosa: My bell is in your hand now, Ada.\n" in deixis.render(v5, False) and v5.gold == "cup"
+    third5 = deixis.build("t5", (3, 3, "self"), deixis.to_third(v5.spec))
+    assert deixis.render(third5, False) == (
+        "Ada, Ken and Rosa are sitting at a table. Ada has the lamp. Ken has the cup. "
+        "Rosa has the bell. Rosa gets the cup from Ken. Ada gets the bell from Rosa. "
+        "Ada gives the lamp to Ken. Right now Rosa is holding the")
+    assert third5.gold == "cup"
+
+
+def test_addressed_declarations_keep_the_speaker_as_holder():
+    ev = [{**_decl("Ada", "lamp"), "voc": "Ken"}, _decl("Ken", "cup", "hand"), {**_decl("Rosa", "bell", "hand"), "voc": "Ada"},
+          _give("Ken", "cup", "Rosa", "here")]
+    it = _build(_spec(P3, OBJS3, ev, {"kind": "owner", "obj": "bell"}), (3, 1, "owner"))
+    text = deixis.render(it, False)
+    assert "Ada: Ken, I have the lamp.\n" in text and "Rosa: Ada, the bell is in my hand.\n" in text
+    assert it.gold == "Rosa"          # the speaker holds it; the vocative is the nearest name
+    deixis.check_surface(it)
+    with pytest.raises(ValueError):   # a declaration's vocative must name another of three people
+        _build(_spec(P3, OBJS3, [{**_decl("Ada", "lamp"), "voc": "Ada"}] + ev[1:], {"kind": "owner", "obj": "bell"}),
+               (3, 1, "owner"))
     own = _build(_spec(P3, OBJS3, P3_EVENTS, {"kind": "owner", "obj": "bell"}), (3, 3, "owner"))
     assert own.gold == "Ada" and own.candidates == P3
     assert deixis.render(own, False).endswith("Ken, I'm giving you my lamp.\nSo the bell is with")
@@ -152,7 +174,7 @@ def test_addressee_resolution_and_ambiguity():
     with pytest.raises(ValueError):
         _build(_spec(P3, OBJS3, ev, {"kind": "self", "speaker": "Rosa"}), (3, 1, "self"))
     # the surface checker catches hand-broken lines independent of the simulator
-    it = _build(_spec(P3, OBJS3, P3_EVENTS, {"kind": "owner", "obj": "cup"}), (3, 3, "owner"))
+    it = _build(_spec(P3, OBJS3, P3_EVENTS, {"kind": "owner", "obj": "cup"}), (3, 3, "owner"), version=4)
     deixis.check_surface(it)
     broken = Item(**it.to_dict())
     orig = deixis.render
@@ -164,6 +186,12 @@ def test_addressee_resolution_and_ambiguity():
             deixis.render = functools.partial(_replaced, orig, a, b)
             with pytest.raises(ValueError):
                 deixis.check_surface(broken)
+        v5 = _build(_spec(P3, OBJS3, P3_EVENTS, {"kind": "owner", "obj": "cup"}), (3, 3, "owner"))
+        deixis.render = orig
+        deixis.check_surface(v5)
+        deixis.render = functools.partial(_replaced, orig, "now, Ada.", "now.")   # "your", the closing vocative dropped
+        with pytest.raises(ValueError):
+            deixis.check_surface(Item(**v5.to_dict()))
     finally:
         deixis.render = orig
 
@@ -206,7 +234,7 @@ def test_twin_flips_exactly_as_simulated_p3():
     xl, wl = deixis.render(x, False).split("\n"), deixis.render(tw, False).split("\n")
     assert xl[0] == wl[0] and xl[-1] == wl[-1]                      # scene + query unchanged
     assert wl[1:-1] == ["Ada: I have the lamp.", "Rosa: The cup is in my hand.", "Ken: I have the bell.",
-                        "Rosa: Here, Ken, take my cup.", "Ken: Ada, my bell is in your hand now.",
+                        "Rosa: Here, Ken, take my cup.", "Ken: My bell is in your hand now, Ada.",
                         "Ada: Rosa, I'm giving you my lamp."]
 
 
@@ -256,7 +284,7 @@ def test_control_wording(dx):
         assert "\n" not in text and ":" not in text
         assert text.startswith(f"{deixis.name_list(it.spec['people'])} are sitting at a table. ")
         assert not deixis._PRONOUNS.search(text)
-        assert re.search(r"\. \w+ gives the \w+ to \w+\. ", text)
+        assert re.search(r"\. \w+ (gives the \w+ to|gets the \w+ from) \w+\. ", text)
         q = it.spec["query"]
         lead = (f"So the {q['obj']} is with" if q["kind"] == "owner"
                 else f"Right now {q['person']} is holding the")
@@ -318,7 +346,8 @@ def test_balancing_follows_schedule_and_audit(dx):
     assert deixis.audit_failures(aud) == []
     for c in deixis.CELLS:
         a = aud["/".join(map(str, c))]
-        assert a["third"]["gold_is_last_mention"] == a["deictic"]["gold_is_last_mention"]
+        # generation 5's recipient-first third sentences reorder mentions; the rate stays near the schedule's
+        assert abs(a["third"]["gold_is_last_mention"] - a["deictic"]["gold_is_last_mention"]) <= .5
         assert a["deictic"]["gold_is_last_mention"] <= 0.5 + deixis.BALANCE_TOL
     # the neutral rate: per object count, gold = last mention in exactly 1/n of a full cycle
     full = items.generate_family("deixis", SPLIT, 21, seed=4)
