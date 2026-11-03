@@ -230,10 +230,11 @@ def _cell_metrics(rows: list[Mapping[str, Any]]) -> dict[str, float]:
     return out
 
 
-def summarize(rows: Sequence[Mapping[str, Any]]) -> dict[str, float]:
+def summarize(rows: Sequence[Mapping[str, Any]], items: Optional[Sequence[Item]] = None) -> dict[str, float]:
     """``riders/{register}/{condition}/{acc,cc_acc,margin,n,err_*}`` per register
     plus the ``prose`` pool (narrative+screenplay+chat); ``riders/{register}/shot_gap``
-    = cc(3shot) - cc(0shot) and ``relet_gap`` = cc(3shot_relet) - cc(3shot)."""
+    = cc(3shot) - cc(0shot) and ``relet_gap`` = cc(3shot_relet) - cc(3shot). Given the scored ``items``, also
+    the lookup / update split (:func:`split_metrics`)."""
     by: defaultdict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
     for r in rows:
         by[(r["renderer"], r["condition"])].append(r)
@@ -257,4 +258,30 @@ def summarize(rows: Sequence[Mapping[str, Any]]) -> dict[str, float]:
             out[f"riders/{rd}/relet_gap"] = cc["3shot_relet"] - cc["3shot"]
         if FAIR in cc and "0shot" in cc:
             out[f"riders/{rd}/fair_gap"] = cc[FAIR] - cc["0shot"]
+    return out if items is None else out | split_metrics(by, items)
+
+
+def is_lookup(item: Item) -> bool:
+    """The queried box ends holding its declared contents (untouched, or swapped back), so ignoring every operation
+    answers it. The other items with operations test applying an update."""
+    return item.boxes0.get(item.query_box) == item.gold
+
+
+def split_metrics(by: Mapping[tuple[str, str], Sequence[Mapping[str, Any]]],
+                  items: Sequence[Item]) -> dict[str, float]:
+    """``riders/{register}/{condition}/cc_lookup`` and ``cc_update``: chance-corrected accuracy on the items with
+    operations, split by :func:`is_lookup`. A row whose item isn't in ``items`` is refused."""
+    lookup = {it.item_id: is_lookup(it) for it in items if it.m > 0}
+    out: dict[str, float] = {}
+    for (rd, cond), sub in by.items():
+        parts: dict[bool, list[Mapping[str, Any]]] = {True: [], False: []}
+        for r in sub:
+            if r["m"] == 0:
+                continue
+            if r["item_id"] not in lookup:
+                raise KeyError(f"riders row {r['item_id']!r} has no item among the {len(lookup)} given")
+            parts[lookup[r["item_id"]]].append(r)
+        for name, part in (("cc_lookup", parts[True]), ("cc_update", parts[False])):
+            if part:
+                out[f"riders/{rd}/{cond}/{name}"] = cc_point(list(part))
     return out

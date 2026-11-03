@@ -450,3 +450,25 @@ def test_fair_jobs_and_default_jobs():
     assert lite.FAIR not in lite.CONDITIONS
     with pytest.raises(ValueError, match="needs fair_shots"):
         lite.build_jobs(sel, shots[:items.N_SHOTS], relet, conditions=(lite.FAIR,))
+
+
+def test_summarize_splits_lookup_from_update_items_when_given_the_items():
+    lite, sel, _, _ = _fair_battery()
+    ops = [it for it in sel if it.m > 0]
+    look = [it for it in ops if lite.is_lookup(it)]
+    upd = [it for it in ops if not lite.is_lookup(it)]
+    assert look and upd and all(it.boxes0[it.query_box] == it.gold for it in look)
+
+    def row(it, right):
+        return {"item_id": it.item_id, "renderer": "code", "condition": "0shot", "m": it.m, "margin": 0.0,
+                "gold_rank_cand": 1 if right else 2, "n_candidates": len(it.candidates)}
+
+    rows = [row(it, True) for it in look] + [row(it, False) for it in upd]
+    plain = lite.summarize(rows)
+    assert not any(k.endswith(("cc_lookup", "cc_update")) for k in plain)          # the in-loop keys unchanged
+    split = lite.summarize(rows, sel)
+    assert split["riders/code/0shot/cc_lookup"] == pytest.approx(1.0)
+    assert split["riders/code/0shot/cc_update"] < 0
+    assert {k: v for k, v in split.items() if k in plain} == plain
+    with pytest.raises(KeyError):
+        lite.summarize(rows, look)
