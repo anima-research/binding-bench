@@ -187,7 +187,8 @@ REGISTRY: dict[str, Eval] = {e.name: e for e in (
                           "crystallized gap by 20 points", "8/8 models", "C0 in every fluid family's frame"),),
          "audited"),
     Eval("formupdate", "form-vs-update", "binding", "forming vs updating a binding, paired per base item",
-         ("formupdate-v3", "formupdate-v2", "formupdate-v1"), "python -m binding_bench.binding gen-formupdate",
+         ("formupdate-v3", "formupdate-v2", "formupdate-v1", "formupdate-v3-print"),
+         "python -m binding_bench.binding gen-formupdate",
          ("paired cost, per register (formupdate-v3)",), None,
          (Flag("formupdate-v3 update cost (B - C), per register",
                "register-dependent: positive in both registers (updating the queried holder is the harder update), "

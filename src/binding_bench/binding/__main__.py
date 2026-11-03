@@ -365,6 +365,12 @@ def cmd_gen_formupdate(a: argparse.Namespace) -> int:
         ok = ok and same and not bad
         print(f"{b.name} {len(rows)} rows → {dest}; sha256 {got} {'= pin' if same else f'≠ pin {b.sha256[:16]}…'}"
               f"{'' if not bad else '; AUDIT: ' + '; '.join(bad)}")
+    b = bt.BATTERIES[fu.PRINT_FRAME]
+    dest = out / b.file
+    dest.write_text("".join(json.dumps(r) + "\n" for r in fu.print_frame(fu.generate())))
+    got = bt.sha256(dest)
+    ok = ok and got == b.sha256
+    print(f"{b.name} → {dest}; sha256 {got} {'= pin' if got == b.sha256 else f'≠ pin {b.sha256[:16]}…'}")
     return 0 if ok else 1
 
 

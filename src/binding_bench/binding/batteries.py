@@ -96,6 +96,9 @@ BATTERIES: dict[str, Battery] = {b.name: b for b in (
     Battery("formupdate-v3", "rows", "r2/formupdate-v3.jsonl",
             "f70dad391bed59dbe161379f78d0c8e4bd7ce31225c32d0cc58919c87a0ed897", "formupdate",
             "forming vs updating v3: v2's items with one neutral line before the query, so no value sits next to it"),
+    Battery("formupdate-v3-print", "rows", "r2/formupdate-v3-print.jsonl",
+            "c07f422361eefaeab725225b31b73f2fb707520cfdd76703f0a5ced5b21ec2ff", "formupdate",
+            "formupdate-v3's code rows with a print query line in place of the assert (the query-frame diagnostic)"),
     Battery("bp-deixis-lite", "bindprobes", "r3/bindprobes-deixis-lite/items.jsonl",
             "fa4e51553374c427ef7e1e5aef44ab3b55cca3cb8f5ace57f1943639efcebbea", None,
             "bindprobes deixis-lite (0shot / 3shot)", ("deixis",), ("0shot", "3shot"),
@@ -172,6 +175,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "formupdate-v2": ("formupdate-v2",),
     "formupdate-v1": ("formupdate-v1",),
     "formupdate-v3": ("formupdate-v3",),
+    "formupdate-frame": ("formupdate-v3", "formupdate-v3-print"),
     "all": tuple(BATTERIES),
 }
 

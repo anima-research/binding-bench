@@ -492,6 +492,27 @@ def generate(base: int = BASE_ITEMS, version: str = VERSION) -> list[Row]:
     return [_row(item, c) for item in base_items(base, version) for c in CONDITIONS]
 
 
+# The query-frame diagnostic: formupdate-v3's code rows with the query line ``print(q)  # output:`` in place of
+# ``assert q ==``, every other byte kept, so each row has a twin (``frame_from``). It reads whether the code register's
+# update cost belongs to the assert frame.
+PRINT_FRAME = "formupdate-v3-print"
+_ASSERT_LINE = re.compile(r"\nassert (\w+) ==$")
+
+
+def print_frame(rows: Sequence[Mapping[str, Any]]) -> list[Row]:
+    """The code rows of ``rows`` with the print query line, in their order."""
+    out: list[Row] = []
+    for r in rows:
+        if r["register"] != "code":
+            continue
+        m = _ASSERT_LINE.search(r["prompt"])
+        if not m:
+            raise ValueError(f"{r['id']}: code prompt without an assert query line")
+        out.append({**r, "id": f"{r['id']}|print", "frame_from": r["id"],
+                    "prompt": r["prompt"][:m.start()] + f"\nprint({m.group(1)})  # output:"})
+    return out
+
+
 # ── audits ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def audit(rows: Sequence[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:

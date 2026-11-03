@@ -58,7 +58,24 @@ def test_gen_formupdate_reproduces_the_pins(tmp_path, capsys):
         b = bt.BATTERIES[v]
         assert bt.sha256(tmp_path / b.file) == b.sha256
     out = capsys.readouterr().out
-    assert out.count("= pin") == len(fu.VERSIONS) and "AUDIT" not in out
+    assert out.count("= pin") == len(fu.VERSIONS) + 1 and "AUDIT" not in out
+    assert bt.sha256(tmp_path / bt.BATTERIES[fu.PRINT_FRAME].file) == bt.BATTERIES[fu.PRINT_FRAME].sha256
+
+
+def test_print_frame_rows_are_the_code_rows_with_only_the_query_line_swapped():
+    rows = fu.generate(base=4)
+    code = {r["id"]: r for r in rows if r["register"] == "code"}
+    swapped = fu.print_frame(rows)
+    assert len(swapped) == len(code) > 0
+    for r in swapped:
+        twin = code[r["frame_from"]]
+        body, last = r["prompt"].rsplit("\n", 1)
+        tbody, tlast = twin["prompt"].rsplit("\n", 1)
+        assert body == tbody and tlast == f"assert {twin['holder']} ==" and last == f"print({twin['holder']})  # output:"
+        assert {k: v for k, v in r.items() if k not in ("id", "prompt", "frame_from")} == \
+            {k: v for k, v in twin.items() if k not in ("id", "prompt")}
+    with pytest.raises(ValueError):
+        fu.print_frame([{**next(iter(code.values())), "prompt": "x = y\nprint(x)"}])
 
 
 def test_registry_group_and_reader():
