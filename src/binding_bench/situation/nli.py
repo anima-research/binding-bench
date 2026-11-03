@@ -4,7 +4,7 @@ Per item, probe and rendering, an NLI model reads the story as the premise and o
 
   situation  "The {o} is in the {place}."
   belief     "{a} thinks the {o} is in the {place}."
-  knot       "{name} moved the {o}." / "{name} put the {o} there." / "{name} said the {o} was in the {place}."
+  knot       "{name} put the {o} in the {place}." (first) / "{name} moved the {o} to the {place}." (latest)
 
 The story passes when the gold's hypothesis has the highest entailment probability, by at least ``margin``. A flag
 is a pointer for a human or LLM reader, not a verdict. The screen gates the knot probes, and checks that no story
@@ -25,8 +25,7 @@ from typing import Any, Sequence
 
 from binding_bench.situation.items import N_RENDERINGS, Item, Probe, render_story
 
-KNOT_VERB = {"q_knot_move": "{n} moved the {o}.", "q_knot_put": "{n} put the {o} in the {p}.",
-             "q_knot_claim": "{n} said the {o} was in the {p}."}
+KNOT_VERB = {"q_knot_first": "{n} put the {o} in the {p}.", "q_knot_latest": "{n} moved the {o} to the {p}."}
 
 
 def hypotheses(item: Item, probe: Probe) -> list[str]:

@@ -12,6 +12,9 @@ narrows the candidates). Events:
   mention  a person uses a place for something else            nothing changes (the recency trap)
   chat     neutral filler                                      nothing changes
   motive   actor wants to keep the object from listener        nothing changes (gives a lie its reason)
+  intend   actor is about to move it to a place, and doesn't     nothing changes (a foiled move names a place)
+  watch    actor watches the listener                           nothing changes (states a perception the story
+                                                                 already grants: everyone present sees events)
 
 The simulator is the only source of golds: :func:`simulate` replays the events and :func:`check_story` refuses a
 story whose events contradict themselves (a move from where the object isn't, an absent actor acting, …).
@@ -22,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal, Optional
 
-EventKind = Literal["put", "move", "leave", "return", "claim", "reveal", "mention", "chat", "motive"]
+EventKind = Literal["put", "move", "leave", "return", "claim", "reveal", "mention", "chat", "motive", "intend", "watch"]
 CHANGES: frozenset[str] = frozenset({"put", "move"})
 
 
@@ -91,6 +94,12 @@ def simulate(people: list[str], events: list[Event]) -> State:
         elif ev.kind == "motive":
             if ev.listener not in st.belief or ev.listener == ev.actor:
                 raise StoryError(f"{where}: a motive names someone else to keep the object from")
+        elif ev.kind == "intend":
+            if st.world is None or ev.place is None or ev.place == st.world:
+                raise StoryError(f"{where}: a foiled move names a place the object is not in")
+        elif ev.kind == "watch":
+            if ev.listener not in st.present or ev.listener == ev.actor:
+                raise StoryError(f"{where}: watch names someone else who is there")
         elif ev.kind != "chat":
             raise StoryError(f"{where}: unknown event kind")
         if ev.kind == "move" and ev.src is not None:

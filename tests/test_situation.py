@@ -50,31 +50,40 @@ def test_every_item_passes_the_gate_and_arms_hold(items):
     for it in items:
         si.gate(it)
     by = {a: [i for i in items if i.arm == a] for a in si.ARMS}
-    assert all(not i.meta["gold_is_last_place_mention"] for i in by["R"])
+    assert all(len(by[a]) == 40 * si.ARM_WEIGHT.get(a, 1) for a in si.ARMS)
     assert all(i.meta["n_changes"] == 1 for i in by["N"])
-    for i in by["B"]:
-        bel = next(p for p in i.probes if p.kind == "belief")
-        assert bel.gold != i.meta["world"]
-    for i in by["D"]:
-        assert {p.kind for p in i.probes} == {"situation", "belief", "knot"}
-        assert next(p for p in i.probes if p.kind == "belief").gold != i.meta["world"]
-    for arm in ("U", "N", "R"):
-        assert all(next(p for p in i.probes if p.kind == "belief").gold == i.meta["world"] for i in by[arm])
-    for i in by["L"]:
-        assert {p.kind for p in i.probes} == {"situation", "knot"}
+    for i in by["F"]:                 # the foiled move changes nothing: only the put (and the prelude's move) do
+        assert i.meta["n_changes"] == (2 if i.meta["prelude"] else 1) and any(e["kind"] == "intend" for e in i.events)
+    for a in si.ARMS:
+        for i in by[a]:
+            bel = [p for p in i.probes if p.kind == "belief"]
+            if a in si.BELIEF_ARMS:
+                assert (bel[0].gold == i.meta["world"]) == (a in si.BELIEF_IS_WORLD)
+            else:
+                assert not bel
+    for i in by["O"]:                 # the put is told after the move, in the past perfect
+        assert i.flashback == [0] and i.narration[:2] == [1, 0]
+    for i in by["W"]:
+        kinds = [e["kind"] for e in i.events]
+        assert kinds.index("watch") > max(k for k, x in enumerate(kinds) if x == "move")   # seen, after it happens
 
 
-def test_no_position_or_role_rule_finds_the_gold(items):
-    """The pilot's lesson: the knot gold is not tied to the second-named person, and the belief gold is not always the
-    first place the object was put."""
-    knots = [next(p for p in i.probes if p.kind == "knot") for i in items]
-    second = sum(k.gold == k.candidates[1] for k in knots) / len(knots)
-    named_second = sum(next(p for p in i.probes if p.kind == "knot").gold == i.people[1] for i in items) / len(items)
-    assert .3 < second < .7 and .3 < named_second < .7
-    bel = [(i, next(p for p in i.probes if p.kind == "belief")) for i in items if i.arm != "L"]
-    first_put = sum(b.gold == next(e for e in i.events if e["kind"] == "put")["place"] for i, b in bel) / len(bel)
-    world = sum(b.gold == i.meta["world"] for i, b in bel) / len(bel)
-    assert first_put < .85 and .4 < world < .8
+def test_the_shortcut_gate_passes_v2_and_refuses_a_recency_solvable_set(items):
+    rep = si.gate_set(items)
+    assert set(rep) == {"situation", "belief", "knot_first", "knot_latest"}
+    assert max(x for ps in rep.values() for x in ps.values()) < si.SHORTCUT_CEILING
+    only_u = [i for i in items if i.arm == "U" and not i.meta["distractor"]]
+    with pytest.raises(AssertionError):
+        si.gate_set(only_u)           # "the last place put in" answers every situation probe here
+
+
+def test_knot_questions_never_share_their_verb_with_the_story(items):
+    for it in items[:60]:
+        k = next(p for p in it.probes if p.kind.startswith("knot"))
+        assert k.kind == f"knot_{it.meta['knot']}"
+        for r in range(si.N_RENDERINGS):
+            story = si.render_story(it, r).lower()
+            assert "stow" not in story and "carr" not in story
 
 
 def test_renderings_differ_only_in_wording(items):
@@ -103,7 +112,7 @@ def test_cli_gen_writes_gated_items_and_rows(tmp_path):
     assert cli_main(["gen", "--out", str(tmp_path), "--per-arm", "12"]) == 0
     items = [json.loads(ln) for ln in (tmp_path / "items.jsonl").read_text().splitlines()]
     rows = [json.loads(ln) for ln in (tmp_path / "rows.jsonl").read_text().splitlines()]
-    assert len(items) == 12 * len(si.ARMS)
+    assert len(items) == 12 * sum(si.ARM_WEIGHT.get(a, 1) for a in si.ARMS)
     assert len(rows) == 2 * sum(len(i["probes"]) for i in items) * si.N_RENDERINGS      # 0shot + fair
 
 
@@ -138,12 +147,8 @@ def test_nli_hypotheses_cover_every_candidate(items, tmp_path):
     assert [i.item_id for i in nli.load_items(f)] == [i.item_id for i in items[:5]]
 
 
-def test_put_question_names_the_first_place_and_only_a_put_it_there(items):
+def test_only_the_knot_gold_ever_placed_the_object_in_the_queried_place(items):
     for it in items:
-        k = next(p for p in it.probes if p.kind == "knot")
-        if k.lead != "q_knot_put":
-            continue
-        first = next(e for e in it.events if e["kind"] == "put")
-        assert k.slots["p"] == first["place"] and k.gold == first["actor"]
-        assert not any(e["kind"] in ("put", "move") and e["place"] == first["place"] and e["actor"] != k.gold
-                       for e in it.events)
+        k = next(p for p in it.probes if p.kind.startswith("knot"))
+        doers = {e["actor"] for e in it.events if e["kind"] in ("put", "move") and e["place"] == k.slots["p"]}
+        assert doers == {k.gold}
