@@ -139,7 +139,19 @@ def formupdate(rows: Sequence[Row]) -> dict[str, Any]:
     return summarize(rows).as_dict()
 
 
-READERS = {"joinlite": joinlite, "swapdyn": swapdyn, "decomp": decomp, "capacity": capacity,
+def frame(rows: Sequence[Row]) -> dict[str, Any]:
+    """frame-ladder-v1: accuracy against chance per rung × query kind (0-shot, one cue added per rung)."""
+    by: dict[tuple[str, str], list[bool]] = defaultdict(list)
+    chance: dict[tuple[str, str], list[float]] = defaultdict(list)
+    for r in rows:
+        key = (r["rung"], r["qkind"])
+        by[key].append(_ok(r))
+        chance[key].append(1 / len(r["candidates"]))
+    return {f"{g}/{q}": {"n": len(x), "acc": sum(x) / len(x), "chance": sum(chance[(g, q)]) / len(x)}
+            for (g, q), x in sorted(by.items())}
+
+
+READERS = {"joinlite": joinlite, "swapdyn": swapdyn, "decomp": decomp, "frame": frame, "capacity": capacity,
            "fluid-morph": fluid, "fluid-algebra": fluid, "fluid-rebind": fluid, "fluid-seqind": fluid,
            "cryst": fluid, "formupdate": formupdate}
 

@@ -232,6 +232,12 @@ def test_swapdyn_and_decomp_readers():
     d = readers.decomp(drows)
     assert d["third/0shot"]["acc"] == 1.0 and d["deictic/0shot"]["acc"] == 0.0
     assert abs(d["third/0shot"]["chance"] - 1 / 3) < 1e-9
+    frows = [{"rung": g, "qkind": "self", "gold": "cup", "candidates": [" cup", " lamp", " key"],
+              "cand_lps": _lp("cup" if g == "r4" else "lamp", cands)} for g in ("r0", "r4") for _ in range(6)]
+    f = readers.frame(frows)
+    assert f["r4/self"]["acc"] == 1.0 and f["r0/self"]["acc"] == 0.0 and f["r0/self"]["n"] == 6
+    from binding_bench.binding import batteries as bt
+    assert all(b.reader in readers.READERS for b in bt.BATTERIES.values() if b.reader)   # every battery's reader exists
     row = readers.scorecard_row({"decomp": d, "swapdyn": readers.swapdyn(rows)})
     assert row["decomp third"] == "1.000" and row["dyn-you 0shot"].endswith("bind") and row["static I"] == "—"
 
