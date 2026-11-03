@@ -9,7 +9,9 @@ things:
   facts in the same frame (crystallized).
 
 Every battery is a frozen, sha256-pinned set of prompts. Every model is scored the same way: by the log-probability
-that it gives each candidate answer.
+that it gives each candidate answer. An exact tie between candidates splits the credit. Readings are reported as
+chance-corrected accuracy, (accuracy − chance) / (1 − chance), with chance at one over the number of candidates. The
+records write it as κ; it is not Cohen's κ.
 
 ## Where the pieces are
 
