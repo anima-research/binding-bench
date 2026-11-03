@@ -38,17 +38,18 @@ class ModelSpec:
     size: str = "1b-tsumugi"
     bounds: Optional[str] = None
     attn_res: Literal["config", "on", "off"] = "config"
+    trust_remote_code: bool = False     # hf only: run the checkpoint's own modeling code (named in the spec, never implied)
 
     @classmethod
     def parse(cls, spec: str) -> "ModelSpec":
         kind, sep, rest = spec.partition(":")
         if not sep or not rest:
-            raise SpecError(f"model spec must be koto:PATH[?k=v&…] or hf:PATH, got {spec!r}")
+            raise SpecError(f"model spec must be koto:PATH[?k=v&…] or hf:PATH[?trust_remote_code=1], got {spec!r}")
         path, _, query = rest.partition("?")
         if kind == "hf":
-            if query:
-                raise SpecError(f"hf specs take no options, got {spec!r}")
-            return cls(kind="hf", path=path)
+            if query and query != "trust_remote_code=1":
+                raise SpecError(f"hf specs take only ?trust_remote_code=1, got {spec!r}")
+            return cls(kind="hf", path=path, trust_remote_code=bool(query))
         if kind != "koto":
             raise SpecError(f"model spec kind must be koto or hf, got {kind!r}")
         kw: dict[str, str] = {}
@@ -191,9 +192,9 @@ def _load_koto(spec: ModelSpec, device: str) -> LoadedModel:
 def _load_hf(spec: ModelSpec, device: str) -> LoadedModel:
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    tok = AutoTokenizer.from_pretrained(spec.path)
+    tok = AutoTokenizer.from_pretrained(spec.path, trust_remote_code=spec.trust_remote_code)
     dt = torch.float32 if device == "cpu" else torch.bfloat16
-    model = AutoModelForCausalLM.from_pretrained(spec.path, torch_dtype=dt,
+    model = AutoModelForCausalLM.from_pretrained(spec.path, torch_dtype=dt, trust_remote_code=spec.trust_remote_code,
                                                  device_map=None if device == "cpu" else "auto")
     if device == "cpu":
         model = model.to("cpu")

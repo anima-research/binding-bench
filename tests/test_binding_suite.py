@@ -29,7 +29,10 @@ def test_spec_parse():
     s = ModelSpec.parse("koto:/c/a.pt?size=3b&bounds=0,1,3,7,15,19,24&attn_res=on")
     assert (s.size, s.bounds, s.attn_res) == ("3b", "0,1,3,7,15,19,24", "on")
     assert ModelSpec.parse("hf:EleutherAI/pythia-1.4b") == ModelSpec(kind="hf", path="EleutherAI/pythia-1.4b")
-    for bad in ("pythia", "vllm:/x", "koto:", "koto:/a?boundz=1", "koto:/a?attn_res=maybe", "hf:/x?size=3b"):
+    assert not ModelSpec.parse("hf:/m/x").trust_remote_code
+    assert ModelSpec.parse("hf:/m/x?trust_remote_code=1").trust_remote_code
+    for bad in ("pythia", "vllm:/x", "koto:", "koto:/a?boundz=1", "koto:/a?attn_res=maybe", "hf:/x?size=3b",
+                "hf:/x?trust_remote_code=0", "hf:/x?trust_remote_code=1&size=3b"):
         with pytest.raises(SpecError):
             ModelSpec.parse(bad)
 
