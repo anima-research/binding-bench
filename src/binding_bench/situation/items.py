@@ -4,8 +4,8 @@ An item is one short story (:mod:`binding_bench.situation.world`) with probes at
 
   situation    "So the key is in the"                        → a place   (where the object IS)
   belief       "Ana will look for the key in the"             → a place   (where a person thinks it is)
-  knot_first   "The one who stowed the key in the drawer was" → a person  (the agent of the earlier placement)
-  knot_latest  "The one who carried the key to the pot was"   → a person  (the agent of the later move)
+  knot_first   "The key had been stowed in the drawer by"     → a person  (the agent of the earlier placement)
+  knot_latest  "The key had been carried to the pot by"       → a person  (the agent of the later move)
 
 Arms (a fixed event skeleton each, filled from the pools; A puts the object away, B moves it):
   U  update        put by A, move by B                          situation = the new place; belief(A) = world, implicit
@@ -147,14 +147,16 @@ PHRASES: dict[str, PhraseSet] = {s.name: s for s in (
     PhraseSet("q_situation", (Phrase("So the {o} is in the", _S | {"location"}), Phrase("The {o} is in the", _S | {"location"}),
                               Phrase("Where is the {o}? It is in the", _S | {"location"}))),
     PhraseSet("q_belief", (Phrase("{a} will look for the {o} in the", frozenset({"belief", "narration"})),
-                           Phrase("{a} thinks the {o} is in the", frozenset({"belief", "narration"})),
+                           Phrase("{a} will search for the {o} in the", frozenset({"belief", "narration"})),
                            Phrase("{a} expects to find the {o} in the", frozenset({"belief", "narration"})))),
-    PhraseSet("q_knot_first", (Phrase("The one who stowed the {o} in the {p} was", _S),
+    # passive "… by": the slot right after "by" is the agent (the pilot's rendering gate: "The one who … was" read
+    # 20–50 κ below "… by" on most models, since a slot after "was" admits more than a name)
+    PhraseSet("q_knot_first", (Phrase("The {o} had been stowed in the {p} by", _S),
                                Phrase("The {o} was stowed in the {p} by", _S),
-                               Phrase("The person who stowed the {o} in the {p} was", _S))),
-    PhraseSet("q_knot_latest", (Phrase("The one who carried the {o} to the {p} was", _S),
+                               Phrase("The {o} got stowed in the {p} by", _S))),
+    PhraseSet("q_knot_latest", (Phrase("The {o} had been carried to the {p} by", _S),
                                 Phrase("The {o} was carried to the {p} by", _S),
-                                Phrase("The person who carried the {o} to the {p} was", _S))),
+                                Phrase("The {o} got carried to the {p} by", _S))),
 )}
 FORBID: frozenset[str] = frozenset({"implies_change", "ownership", "matches_query"})
 
