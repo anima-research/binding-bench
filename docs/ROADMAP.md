@@ -15,8 +15,9 @@ is pre-registered before any row is scored.
 ## 2. Close the open validity questions
 - **joinlite:** the I / you queries open with "Right now". Test that opening the way the third-person "Now" was
   tested. A joinlite without "Now" is a new battery version.
-- **formupdate:** in prose, the update cost reverses sign. Test whether a recency cue causes it: "… is put in it"
-  makes the latest value the gold answer in C. If it does, that grounds a formupdate-v3.
+- **formupdate:** in formupdate-v3, updating the queried holder costs more than updating another holder, in both
+  registers. In code the cost is larger, and the errors are the stale value. Test whether the query's `assert`
+  causes it: `formupdate-v3-print` asks with `print` instead and changes nothing else.
 - **Riders:** report each register on its own, and add a balanced few-shot condition (`fair`). Tag the banked
   items by the kind of update they hold, swap or reset.
 - **Reliability and floors:** for every slice, record split-half reliability, between-model spread, and the share of
