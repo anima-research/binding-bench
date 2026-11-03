@@ -1086,6 +1086,63 @@ def generate(battery: str, seeds: int = SEEDS, trials: Optional[int] = None) -> 
     return _GENERATORS[battery](seeds, fam.trials if trials is None else trials)
 
 
+# ── the supplied-rule control ───────────────────────────────────────────────────────────────────────────────────
+# The same rows as the inferred batteries, with the rule stated in one line under the header and every other byte kept,
+# so each supplied row has an inferred twin (``supplied_from``) and their difference is the cost of inducing the rule
+# rather than applying it. F1 keeps only the vowel-change and conditioned tiers: stating a suffix or an infix states
+# the answer token. A partner rule names the operation, not the pairing, which stays in the examples.
+
+SUPPLIED_BATTERY = "fluid-v2-supplied"
+SUPPLIED_FROM: tuple[str, ...] = ("fluid-v1-morph", "fluid-v2-algebra")
+SUPPLIED_F1_RULES: tuple[str, ...] = ("vowel", "cond")
+F2_RULE_WORDS: dict[str, str] = {"first": "gives its left token", "second": "gives its right token",
+                                 "partner": "gives the partner of its left token"}
+_SYLLABLES = {2: "two-syllable", 3: "three-syllable"}
+
+
+def rule_line(row: Mapping[str, Any]) -> str:
+    """The stated rule of one F1 (vowel / cond) or F2 row, read off the row's own fields."""
+    if row["family"] == "F1":
+        if row["rule"] == "vowel":
+            if row["gold"][:-1] != row["stem"][-1][:-1]:
+                raise ValueError(f"{row['id']}: vowel gold {row['gold']!r} does not keep the last syllable's consonant")
+            return f"Rule: the plural changes the vowel of the last syllable to {row['gold'][-1]}."
+        if row["rule"] == "cond":
+            other = [c for c, role in row["roles"].items() if role == "wrong_class"]
+            n = len(row["stem"])
+            if len(other) != 1 or n not in _SYLLABLES:
+                raise ValueError(f"{row['id']}: no single other-class affix, or a {n}-syllable stem")
+            affix = {n: row["gold"], 5 - n: other[0]}
+            return (f"Rule: a two-syllable word adds {affix[2]} at the end, and a three-syllable word adds {affix[3]} "
+                    f"at the end.")
+        raise ValueError(f"{row['id']}: F1 rule {row['rule']!r} is not supplied")
+    if row["family"] == "F2":
+        body = row["prompt"].split("\n", 1)[1]
+        ops = sorted(row["op_rules"], key=lambda o: body.index(o))
+        parts = [f"{o} {F2_RULE_WORDS[row['op_rules'][o]]}" for o in ops]
+        return ("Rule: " if len(parts) == 1 else "Rules: ") + "; ".join(parts) + "."
+    raise ValueError(f"{row['id']}: family {row['family']!r} has no supplied rule")
+
+
+def supplied(rows: Sequence[Mapping[str, Any]]) -> list[Row]:
+    """The supplied-rule rows for the given inferred rows (F1 vowel / cond, every F2 row), in their order."""
+    out: list[Row] = []
+    for r in rows:
+        if r["family"] == "F1" and r["rule"] not in SUPPLIED_F1_RULES:
+            continue
+        if r["family"] not in ("F1", "F2"):
+            continue
+        head, rest = r["prompt"].split("\n", 1)
+        line = rule_line(r)
+        out.append({**r, "id": f"{r['id']}|supplied", "supplied_from": r["id"], "rule_line": line,
+                    "prompt": f"{head}\n{line}\n{rest}"})
+    return out
+
+
+def generate_supplied(seeds: int = SEEDS) -> list[Row]:
+    return supplied([r for b in SUPPLIED_FROM for r in generate(b, seeds)])
+
+
 # ── token checks ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 def check_pools(encoders: Mapping[str, Callable[[str], Sequence[int]]],

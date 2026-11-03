@@ -246,6 +246,13 @@ def cmd_gen_fluid(a: argparse.Namespace) -> int:
         verdict = "= pin" if same else f"≠ pin {b.sha256[:16]}…"
         print(f"{name:18} {len(rows):5} rows → {dest}; sha256 {got} {verdict}"
               f"{'' if not bad else '; AUDIT: ' + '; '.join(bad)}")
+    b = bt.BATTERIES[fl.SUPPLIED_BATTERY]
+    dest = out / b.file
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text("".join(json.dumps(r) + "\n" for r in fl.generate_supplied()))
+    got = bt.sha256(dest)
+    ok = ok and got == b.sha256
+    print(f"{b.name:18} → {dest}; sha256 {got} {'= pin' if got == b.sha256 else f'≠ pin {b.sha256[:16]}…'}")
     return 0 if ok else 1
 
 

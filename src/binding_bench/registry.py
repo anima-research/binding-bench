@@ -159,8 +159,10 @@ REGISTRY: dict[str, Eval] = {e.name: e for e in (
                "3/8 models (SmolLM2-1.7B, Llama-3.1-8B, OLMo-2-7B)", "rendering spread, `Name: task` vs prose"),),
          "audited"),
     Eval("fluid", "fluid", "binding", "fluid F1-F4: nonce morphology, symbol algebra, rebinding chains, sequence induction",
-         ("fluid-v1-morph", "fluid-v1-algebra", "fluid-v2-algebra", "fluid-v1-rebind", "fluid-v2-rebind", "fluid-v1-seqind"),
-         "python -m binding_bench.binding gen-fluid", ("ladder AUC", "F4: ladder AUC beside the in-context n-gram's (.26)"),
+         ("fluid-v1-morph", "fluid-v1-algebra", "fluid-v2-algebra", "fluid-v1-rebind", "fluid-v2-rebind", "fluid-v1-seqind",
+          "fluid-v2-supplied"),
+         "python -m binding_bench.binding gen-fluid", ("ladder AUC", "F4: ladder AUC beside the in-context n-gram's (.26)",
+                                                     "inferred minus supplied rule, on twin rows (F1 vowel / cond, F2)"),
          None,
          (Flag("F4 ladder AUC", "copy-solvable subset: an in-context n-gram (longest suffix match over the prompt) scores "
                                 "AUC .26, from period rows read after a motif token (n-gram accuracy 1.00); mirror rows "

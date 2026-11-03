@@ -41,7 +41,33 @@ def test_gen_fluid_reproduces_the_pinned_batteries(tmp_path, capsys):
     assert cli_main(["gen-fluid", "--out", str(tmp_path)]) == 0
     for b in fl.BY_BATTERY:
         assert bt.sha256(tmp_path / bt.BATTERIES[b].file) == bt.BATTERIES[b].sha256
-    assert "AUDIT" not in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "AUDIT" not in out
+    assert bt.sha256(tmp_path / bt.BATTERIES[fl.SUPPLIED_BATTERY].file) == bt.BATTERIES[fl.SUPPLIED_BATTERY].sha256
+
+
+def test_supplied_rows_are_their_inferred_twins_plus_one_rule_line():
+    inferred = {r["id"]: r for b in fl.SUPPLIED_FROM for r in fl.generate(b, **SMALL)}
+    rows = fl.supplied(list(inferred.values()))
+    assert rows and {r["family"] for r in rows} == {"F1", "F2"}
+    assert {r["rule"] for r in rows if r["family"] == "F1"} == set(fl.SUPPLIED_F1_RULES)
+    for r in rows:
+        twin = inferred[r["supplied_from"]]
+        head, line, rest = r["prompt"].split("\n", 2)
+        assert line == r["rule_line"] and f"{head}\n{rest}" == twin["prompt"]
+        assert {k: v for k, v in r.items() if k not in ("id", "prompt", "supplied_from", "rule_line")} == \
+            {k: v for k, v in twin.items() if k not in ("id", "prompt")}
+        if r.get("rule") == "vowel":
+            assert line.endswith(f" to {r['gold'][-1]}.")
+        elif r.get("rule") == "cond":
+            n = len(r["stem"])
+            stated = re.search(rf"{'two' if n == 2 else 'three'}-syllable word adds (\w+)", line)
+            assert stated and stated.group(1) == r["gold"]
+        else:
+            for op, rule in r["op_rules"].items():
+                assert f"{op} {fl.F2_RULE_WORDS[rule]}" in line
+    with pytest.raises(ValueError):
+        fl.rule_line({**rows[0], "family": "F4"})
 
 
 def test_registry_group_and_readers():

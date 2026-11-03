@@ -8,8 +8,10 @@ Readers take scored rows (``score.prompt_row`` shape) for ONE model and return p
                 query kind (self / addressee)
   decomp        stage-5 decomposition: accuracy per variant × condition (layer 1 = 0-shot ``third``)
   capacity      K50 / AUC / D=256 (:func:`binding_bench.binding.capacity.summarize`)
-  fluid-*, cryst  per-family ladder midpoint / AUC, F3 stale-value rate, C0 accuracy by shots
+  fluid-*, cryst  (but fluid-supplied) per-family ladder midpoint / AUC, F3 stale-value rate, C0 accuracy by shots
                 (:func:`binding_bench.binding.fluid.summarize`)
+  fluid-supplied  accuracy against chance per family × rung of the supplied-rule rows (their inferred twins are read
+                by the inferred batteries)
   formupdate    form acc(A), interference and update costs (raw and normalized) with paired-bootstrap intervals,
                 C's stale rate (:func:`binding_bench.binding.formupdate.summarize`)
 The arithmetic is that of the readers the recorded gauge numbers came from, so a suite number equals the recorded
@@ -151,9 +153,22 @@ def frame(rows: Sequence[Row]) -> dict[str, Any]:
             for (g, q), x in sorted(by.items())}
 
 
+def fluid_supplied(rows: Sequence[Row]) -> dict[str, Any]:
+    """fluid-v2-supplied: accuracy against chance per family × rung (the inferred twins are read by their own
+    batteries; the paired difference needs both)."""
+    by: dict[tuple[str, int], list[bool]] = defaultdict(list)
+    chance: dict[tuple[str, int], list[float]] = defaultdict(list)
+    for r in rows:
+        key = (r["family"], int(r["rung"]))
+        by[key].append(_ok(r))
+        chance[key].append(1 / len(r["candidates"]))
+    return {f"{f}/r{g}": {"n": len(x), "acc": sum(x) / len(x), "chance": sum(chance[(f, g)]) / len(x)}
+            for (f, g), x in sorted(by.items())}
+
+
 READERS = {"joinlite": joinlite, "swapdyn": swapdyn, "decomp": decomp, "frame": frame, "capacity": capacity,
            "fluid-morph": fluid, "fluid-algebra": fluid, "fluid-rebind": fluid, "fluid-seqind": fluid,
-           "cryst": fluid, "formupdate": formupdate}
+           "cryst": fluid, "formupdate": formupdate, "fluid-supplied": fluid_supplied}
 
 
 def _f(x: Any, fmt: str = "{:+.3f}") -> str:

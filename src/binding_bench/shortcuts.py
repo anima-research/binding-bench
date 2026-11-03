@@ -129,7 +129,7 @@ SLICES: dict[str, tuple[str, ...]] = {
     "stage5-decomp-core": ("variant",), "frame-ladder-v1": ("rung",), "capacity-v1": ("K",),
     "fluid-v1-morph": ("rung",), "fluid-v1-algebra": ("rung",), "fluid-v1-rebind": ("register",),
     "fluid-v2-algebra": ("rung",), "fluid-v2-rebind": ("register",), "fluid-v1-seqind": ("rung",),
-    "cryst-v1": ("rung",), "formupdate-v1": ("condition",), "formupdate-v2": ("condition",),
+    "cryst-v1": ("rung",), "fluid-v2-supplied": ("family", "rung"), "formupdate-v1": ("condition",), "formupdate-v2": ("condition",),
     "formupdate-v3": ("condition", "register"),
 }
 
