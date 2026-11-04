@@ -13,7 +13,7 @@ instrument stops measuring. The gate checks a corpus against everything the benc
 
 Bench text: every pinned rows battery's prompts, every bindprobes battery rendered at 0shot, 3shot and
 3shot_collide, the riders grid (banked recipe) in every renderer at 0 and 3 shots, and any extra rows files given
-(the situation rows). Bench pool: every candidate of every item, plus the name, object, place and holder pools the
+(the situation rows, or any eval records carrying ``prompt`` or ``text``, such as a generator's held-out eval set). Bench pool: every candidate of every item, plus the name, object, place and holder pools the
 generators draw from; one-letter words (chemical symbols, code variables) and the answer family's "me" / "you" are
 left out.
 
@@ -68,7 +68,10 @@ def _bench_prompts(root: Path, rows_files: Sequence[Path]) -> Iterator[str]:
                 yield json.loads(ln)["prompt"]
     for f in rows_files:
         for ln in f.open():
-            yield json.loads(ln)["prompt"]
+            r = json.loads(ln)
+            if "prompt" not in r and "text" not in r:
+                raise ValueError(f"{f}: a record with neither prompt nor text")
+            yield r.get("prompt") or r["text"]
     its, shots = ri.generate(list(ri.BANKED_VERIFIED_NAMES), 200, 200, ri.DEFAULT_SEED)
     for it in its:
         for rd in ri.ALL_RENDERERS:

@@ -60,3 +60,16 @@ def test_the_cli_writes_a_manifest_and_exits_nonzero_on_refusal(tmp_path, monkey
     assert G.main(["--corpus", str(corpus), "--prompts-dir", str(tmp_path), "--manifest", str(man)]) == 1
     m = json.loads(man.read_text())
     assert m["verdict"] == "REFUSED" and m["line"]["count"] == 1 and len(m["corpus_sha256"]) == 64
+
+
+def test_extra_sources_may_carry_text_or_prompt_and_refuse_neither(tmp_path, monkeypatch):
+    monkeypatch.setattr(G.B, "BATTERIES", {})
+    import binding_bench.riders.items as ri
+    monkeypatch.setattr(ri, "generate", lambda *a, **k: ([], []))
+    f = tmp_path / "eval.jsonl"
+    f.write_text(json.dumps({"text": "Mira: Not yet."}) + "\n" + json.dumps({"prompt": "Wade: Fine."}) + "\n")
+    assert list(G._bench_prompts(tmp_path, [f])) == ["Mira: Not yet.", "Wade: Fine."]
+    bad = tmp_path / "bad.jsonl"
+    bad.write_text(json.dumps({"id": 1}) + "\n")
+    with pytest.raises(ValueError):
+        list(G._bench_prompts(tmp_path, [bad]))
