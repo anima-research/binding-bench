@@ -125,3 +125,35 @@ def test_cap_cuda_memory_sets_fraction(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(m.torch.cuda, "set_per_process_memory_fraction", lambda f, i: calls.append((f, i)))
     assert m.cap_cuda_memory() == pytest.approx(0.25)
     assert calls == [(pytest.approx(0.25), 0), (pytest.approx(0.25), 1)]
+
+
+class _CharTok:
+    """A faithful character-level tokenizer (ids = code points)."""
+    all_special_ids: list[int] = []
+
+    def encode(self, text: str) -> list[int]:
+        return [ord(c) for c in text]
+
+    def decode(self, ids, clean_up_tokenization_spaces=False) -> str:
+        return "".join(chr(i) for i in ids)
+
+
+class _SpaceDroppingTok(_CharTok):
+    """The failure the check exists for: an encoding that loses every space."""
+
+    def encode(self, text: str) -> list[int]:
+        return [ord(c) for c in text if c != " "]
+
+
+def test_check_tokenizer_accepts_a_faithful_tokenizer():
+    m.check_tokenizer(_CharTok())
+
+
+def test_check_tokenizer_refuses_a_tokenizer_that_drops_spaces():
+    with pytest.raises(m.TokenizerError, match="does not round-trip"):
+        m.check_tokenizer(_SpaceDroppingTok())
+
+
+def test_tokenizer_probe_covers_what_batteries_rely_on():
+    p = m.TOKENIZER_PROBE
+    assert " " in p and "\n    " in p and "'" in p and any(ord(c) > 127 for c in p)

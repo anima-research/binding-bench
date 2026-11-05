@@ -189,10 +189,38 @@ def _load_koto(spec: ModelSpec, device: str) -> LoadedModel:
     return loaded
 
 
+# Text whose bytes exercise what the batteries rely on: spaces, newlines, indentation, an apostrophe, and a
+# multi-byte operator symbol.
+TOKENIZER_PROBE = "A chat between Tim and David.\nDavid: Right now you're holding the cup.\n    x = [1, 2]\ntid ⊗ saf = bip"
+
+
+class TokenizerError(ValueError):
+    """A tokenizer that does not encode text faithfully: decoding its encoding doesn't give the text back."""
+
+
+def check_tokenizer(tok: Any, probe: str = TOKENIZER_PROBE) -> None:
+    """Refuse a tokenizer whose encoding of `probe`, special tokens aside, doesn't decode back to `probe`. Some
+    checkpoints declare a tokenizer class that, under a given transformers version, rebuilds their byte-level BPE
+    wrongly (dropping every space, for one), and the model would then be scored on text it never saw."""
+    ids = tok.encode(probe)
+    special = set(getattr(tok, "all_special_ids", None) or [])
+    content = [i for i in ids if i not in special]
+    try:
+        back = tok.decode(content, clean_up_tokenization_spaces=False)
+    except TypeError:
+        back = tok.decode(content)
+    if back != probe:
+        k = next((i for i, (a, b) in enumerate(zip(back, probe)) if a != b), min(len(back), len(probe)))
+        raise TokenizerError(f"the tokenizer does not round-trip text: at character {k} it gives "
+                             f"{back[max(0, k - 12):k + 12]!r} for {probe[max(0, k - 12):k + 12]!r}. Load the "
+                             "checkpoint's tokenizer.json directly, or with the tokenizer class it was trained with")
+
+
 def _load_hf(spec: ModelSpec, device: str) -> LoadedModel:
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     tok = AutoTokenizer.from_pretrained(spec.path, trust_remote_code=spec.trust_remote_code)
+    check_tokenizer(tok)
     dt = torch.float32 if device == "cpu" else torch.bfloat16
     model = AutoModelForCausalLM.from_pretrained(spec.path, torch_dtype=dt, trust_remote_code=spec.trust_remote_code,
                                                  device_map=None if device == "cpu" else "auto")
