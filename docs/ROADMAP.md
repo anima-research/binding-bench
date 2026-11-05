@@ -20,6 +20,11 @@ is pre-registered before any row is scored.
   causes it: `formupdate-v3-print` asks with `print` instead and changes nothing else.
 - **Riders:** report each register on its own, and add a balanced few-shot condition (`fair`). Tag the banked
   items by the kind of update they hold, swap or reset.
+- **The bar for "binds":** a gauge reading binds when its whole 95% interval is above +.02. That bar is a fixed
+  convention. The next gauge version derives it from each battery's own noise. Each battery gets null twins, in which
+  swapping the speaker should not move the answer. A fixed panel of public models reads them, and the bar sits at the
+  97.5th percentile of the shift they show. The method is registered before any model is read under it, and old and
+  new readings are published side by side.
 - **Reliability and floors:** for every slice, record split-half reliability, between-model spread, and the share of
   models at chance or ceiling. A future test of whether slices group by construct runs only on informative slices, corrected for their reliability.
 - **Fluid controls:** an in-context n-gram baseline is scored on every fluid family. Every panel model is above it.
