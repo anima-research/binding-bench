@@ -12,6 +12,7 @@
     python -m binding_bench.binding check-fluid-tokens [--tokenizers a,b]
     python -m binding_bench.binding gen-formupdate --out DIR
     python -m binding_bench.binding gen-stage --out DIR [--prompts-dir DIR]
+    python -m binding_bench.binding gen-register --out DIR
     python -m binding_bench.binding formupdate --scores binding-scores [--models a,b] [--json OUT]
         [--reference a,b,c --release R --anneal X]
 
@@ -79,6 +80,8 @@ def build_parser() -> argparse.ArgumentParser:
                         "bp-deixis-v2 file, also swapdyn-v1, stage5-decomp-v1, stage5-decomp-core and frame-ladder-v1)")
     gs.add_argument("--out", required=True)
     gs.add_argument("--prompts-dir", default=None, help="where bp-deixis-v2 lives (swapdyn's source items)")
+    gr = sub.add_parser("gen-register", help="write register-v1: binding scenes in a seen and two unseen registers")
+    gr.add_argument("--out", required=True, help="directory to write into")
     gu = sub.add_parser("gen-formupdate", help="write the formupdate-v1 and -v2 prompt rows into a directory")
     gu.add_argument("--out", required=True)
     fu = sub.add_parser("formupdate", help="form / interference / update costs with paired-bootstrap intervals")
@@ -254,6 +257,18 @@ def cmd_gen_fluid(a: argparse.Namespace) -> int:
     ok = ok and got == b.sha256
     print(f"{b.name:18} → {dest}; sha256 {got} {'= pin' if got == b.sha256 else f'≠ pin {b.sha256[:16]}…'}")
     return 0 if ok else 1
+
+
+def cmd_gen_register(a: argparse.Namespace) -> int:
+    from binding_bench.binding import register as rg
+    from binding_bench.binding.stagegauges import write_rows
+
+    b = bt.BATTERIES["register-v1"]
+    rows = rg.register_rows()
+    dest = write_rows(rows, Path(a.out) / b.file)
+    got = bt.sha256(dest)
+    print(f"register-v1 {len(rows)} rows → {dest}; sha256 {got} {'= pin' if got == b.sha256 else f'≠ pin {b.sha256[:16]}…'}")
+    return 0 if got == b.sha256 else 1
 
 
 def cmd_gen_stage(a: argparse.Namespace) -> int:
@@ -448,7 +463,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     return {"run": cmd_run, "report": cmd_report, "capacity": cmd_capacity,
             "gen-capacity": cmd_gen_capacity, "gen-fluid": cmd_gen_fluid, "fluid": cmd_fluid,
-            "check-fluid-tokens": cmd_check_fluid_tokens, "gen-formupdate": cmd_gen_formupdate, "gen-stage": cmd_gen_stage,
+            "check-fluid-tokens": cmd_check_fluid_tokens, "gen-formupdate": cmd_gen_formupdate, "gen-stage": cmd_gen_stage, "gen-register": cmd_gen_register,
             "formupdate": cmd_formupdate}[a.cmd](a)
 
 

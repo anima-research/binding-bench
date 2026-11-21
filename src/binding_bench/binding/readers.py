@@ -166,9 +166,92 @@ def fluid_supplied(rows: Sequence[Row]) -> dict[str, Any]:
             for (f, g), x in sorted(by.items())}
 
 
+def _paired_ratio(u: Mapping[str, float], s: Mapping[str, float], n: int = 2000, seed: int = 0) -> dict[str, Any]:
+    """U − S and R = mean U / mean S over the items both carry, with a paired bootstrap over items."""
+    ids = sorted(set(u) & set(s))
+    rng = random.Random(seed)
+    du = [u[i] - s[i] for i in ids]
+    lo, hi = boot_ci(du, n, seed)
+    mu, ms = sum(u[i] for i in ids) / len(ids), sum(s[i] for i in ids) / len(ids)
+    rs = []
+    for _ in range(n):
+        b = [rng.choice(ids) for _ in ids]
+        bs = sum(s[i] for i in b)
+        if bs != 0:
+            rs.append(sum(u[i] for i in b) / bs)
+    rs.sort()
+    return {"n": len(ids), "diff": mu - ms, "diff_ci": [lo, hi], "ratio": mu / ms if ms else None,
+            "ratio_ci": [rs[int(.025 * len(rs))], rs[int(.975 * len(rs))]] if rs else None}
+
+
+def register(rows: Sequence[Row]) -> dict[str, Any]:
+    """register-v1 (:mod:`binding_bench.binding.register`): per construct × register × condition its gauge reading
+    (static, dynamic: the speaker-swap shift of the self and addressee queries, and static's third-person lookup
+    accuracy; set: chance-corrected soft accuracy, the held set's share of the candidates' probability, and hit@1),
+    then for each unseen register the paired transfer against ``seen`` at the same condition: U − S and
+    R = U / S. R is reported only where S's whole interval clears the bar (:data:`BIND`); below it R is noise."""
+    out: dict[str, Any] = {}
+    per_item: dict[tuple[str, str, str, str], dict[str, float]] = {}
+    st = [r for r in rows if r["construct"] == "static" and not r.get("multi_token")]
+    by = {(r["register"], r["condition"], r["base_id"], r["qkind"], r["arm"]): r for r in st}
+    for reg, cond in sorted({(r["register"], r["condition"]) for r in st}):
+        ids = sorted({r["base_id"] for r in st if r["register"] == reg and r["condition"] == cond})
+        third = [by[(reg, cond, i, "third", "orig")] for i in ids if (reg, cond, i, "third", "orig") in by]
+        cell: dict[str, Any] = {"scenes": len(ids), "lookup": sum(_ok(r) for r in third) / max(1, len(third))}
+        for q in ("self", "addressee"):
+            d = {i: _pnorm(by[(reg, cond, i, q, "orig")], by[(reg, cond, i, q, "orig")]["gold"])
+                 - _pnorm(by[(reg, cond, i, q, "swap")], by[(reg, cond, i, q, "orig")]["gold"])
+                 for i in ids if (reg, cond, i, q, "orig") in by and (reg, cond, i, q, "swap") in by}
+            cell[f"swap_{q}"] = _shift(list(d.values()))
+            per_item[("static", f"swap_{q}", reg, cond)] = d
+        out[f"static/{reg}/{cond}"] = cell
+    dy = [r for r in rows if r["construct"] == "dynamic" and not r.get("multi_token")]
+    pair: dict[tuple[str, str, str, str], dict[str, Row]] = defaultdict(dict)
+    for r in dy:
+        pair[(r["register"], r["condition"], r["qkind"], r["base_id"])][r["arm"]] = r
+    for reg, cond in sorted({(r["register"], r["condition"]) for r in dy}):
+        cell = {}
+        for q in ("self", "addressee"):
+            d = {b: _pnorm(v["orig"], v["orig"]["gold_orig"]) - _pnorm(v["swap"], v["orig"]["gold_orig"])
+                 for (rg, c, qq, b), v in pair.items() if rg == reg and c == cond and qq == q and "orig" in v and "swap" in v}
+            cell[f"swap_{q}"] = _shift(list(d.values()))
+            per_item[("dynamic", f"swap_{q}", reg, cond)] = d
+        out[f"dynamic/{reg}/{cond}"] = cell
+    se = [r for r in rows if r["construct"] == "set" and not r.get("multi_token")]
+    for reg, cond in sorted({(r["register"], r["condition"]) for r in se}):
+        soft: dict[str, float] = {}
+        hits: list[float] = []
+        chance: list[float] = []
+        for r in se:
+            if r["register"] != reg or r["condition"] != cond:
+                continue
+            n, k = len(r["candidates"]), len(r["gold_set"])
+            p_set = sum(_pnorm(r, o) for o in r["gold_set"])
+            soft[r["base_id"]] = (p_set - k / n) / (1 - k / n)
+            hits.append(float(max(r["cand_lps"], key=r["cand_lps"].get) in r["gold_set"]))
+            chance.append(k / n)
+        hit, ch = sum(hits) / len(hits), sum(chance) / len(chance)
+        out[f"set/{reg}/{cond}"] = {"items": len(soft), "soft": _shift(list(soft.values())), "hit1": hit,
+                                    "hit1_kappa": (hit - ch) / (1 - ch)}
+        per_item[("set", "soft", reg, cond)] = soft
+    transfer: dict[str, Any] = {}
+    for (con, reading, reg, cond), u in sorted(per_item.items()):
+        if reg == "seen" or ("seen" not in {k[2] for k in per_item} or (con, reading, "seen", cond) not in per_item):
+            continue
+        s = per_item[(con, reading, "seen", cond)]
+        t = _paired_ratio(u, s)
+        s_lo = boot_ci(list(s.values()))[0]
+        if s_lo <= BIND:
+            t["ratio"], t["ratio_ci"], t["ratio_note"] = None, None, f"seen interval not above {BIND}: R undefined"
+        transfer[f"{con}/{reading}/{reg}/{cond}"] = t
+    out["transfer"] = transfer
+    return out
+
+
 READERS = {"joinlite": joinlite, "swapdyn": swapdyn, "decomp": decomp, "frame": frame, "capacity": capacity,
            "fluid-morph": fluid, "fluid-algebra": fluid, "fluid-rebind": fluid, "fluid-seqind": fluid,
-           "cryst": fluid, "formupdate": formupdate, "fluid-supplied": fluid_supplied}
+           "cryst": fluid, "formupdate": formupdate, "fluid-supplied": fluid_supplied,
+           "register": register}
 
 
 def _f(x: Any, fmt: str = "{:+.3f}") -> str:

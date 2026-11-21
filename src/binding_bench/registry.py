@@ -35,6 +35,8 @@ CONSTRUCTS: dict[str, str] = {
     "fluid": "learn a new rule from the examples in the prompt",
     "crystallized": "recall a known fact in the same few-shot frame (the control for fluid)",
     "form-vs-update": "the cost of updating a binding against forming it, paired per item",
+    "register-transfer": "whether a binding a model has in a register it has read carries to the same scene written in "
+                         "a register no text uses",
 }
 
 
@@ -152,6 +154,11 @@ REGISTRY: dict[str, Eval] = {e.name: e for e in (
     Eval("frame-ladder", "deixis", "binding", "the cold two-speaker 'you' with one cue per rung: scene line, an addressee tag "
          "on every line, the tag's format without the addressee, transfers narrated, no I / you",
          ("frame-ladder-v1",), _STAGE, ("0shot, per rung",), "0shot", (), "pending"),
+    Eval("register", "register-transfer", "binding", "the same static-deixis, dynamic-deixis and set-binding scenes in "
+         "a seen register and in two invented ones (markup around the same lines; a relational syntax keeping only "
+         "pronouns and nouns), paired item by item", ("register-v1",), "python -m binding_bench.binding gen-register",
+         ("3shot (static, dynamic) / fair (set), per construct × register; U − S and U / S per unseen register",),
+         None, (), "pending"),
     Eval("capacity", "capacity", "binding", "binding capacity, K50 after arXiv 2609.30634", ("capacity-v1",),
          "python -m binding_bench.binding gen-capacity", ("K50 on the `Name: task` frame, named with it",), None,
          (Flag("K50", "format-loaded: the same bindings as prose sentences cost 21 to 25 points at no filler, and K50 "
