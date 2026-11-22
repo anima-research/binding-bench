@@ -156,8 +156,9 @@ REGISTRY: dict[str, Eval] = {e.name: e for e in (
          ("frame-ladder-v1",), _STAGE, ("0shot, per rung",), "0shot", (), "pending"),
     Eval("register", "register-transfer", "binding", "the same static-deixis, dynamic-deixis and set-binding scenes in "
          "a seen register and in two invented ones (markup around the same lines; a relational syntax keeping only "
-         "pronouns and nouns), paired item by item", ("register-v1",), "python -m binding_bench.binding gen-register",
-         ("3shot (static, dynamic) / fair (set), per construct × register; U − S and U / S per unseen register",),
+         "pronouns and nouns), paired item by item", ("register-v2", "register-v1"), "python -m binding_bench.binding gen-register",
+         ("register-v2: 4shot (static), 3shot (dynamic), fair (set), per construct × register; U − S and U / S per "
+          "unseen register",),
          None, (), "pending"),
     Eval("capacity", "capacity", "binding", "binding capacity, K50 after arXiv 2609.30634", ("capacity-v1",),
          "python -m binding_bench.binding gen-capacity", ("K50 on the `Name: task` frame, named with it",), None,

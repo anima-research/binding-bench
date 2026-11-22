@@ -1,4 +1,4 @@
-"""register-v1: the same binding scenes in a seen register and in two registers no text uses, paired item by item.
+"""register-v1 / -v2: the same binding scenes in a seen register and in two registers no text uses, paired item by item.
 
 A model that binds in the registers it has read may or may not bind when the same scene is written in a form it has
 never seen. Each scene is rendered three ways, with the same names, objects, pronouns, candidates and gold:
@@ -13,29 +13,50 @@ never seen. Each scene is rendered three ways, with the same names, objects, pro
 Three constructs, each read as its gauge reads it:
 
 * ``static``: P2 scenes stated once in narration (joinlite's design), queried as ``third`` (the lookup control),
-  ``self`` and ``addressee``, the self and addressee queries also with the query speaker swapped. 3 worked examples
-  in the item's register (one of each query kind, drawn from the shot pools); the seen register also runs 0-shot.
+  ``self`` and ``addressee``, the self and addressee queries also with the query speaker swapped. Worked examples in
+  the item's register, drawn from the shot pools (v2: two self and two addressee queries, one of each spoken by each
+  person); the seen register also runs 0-shot.
 * ``dynamic``: deixis P2 deictic self / addressee items (objects change hands through I / my / you lines), with the
   speaker of the query line swapped (swapdyn's design); the item's own 3 exemplars, in the item's register; the seen
   register also runs 0-shot. The seen 3-shot rendering reproduces the deixis payload byte for byte.
 * ``set``: setbind (generation 4, the ``lines`` rendering) under ``fair`` (4 balanced exemplars) in each register.
 
-``register_rows`` rebuilds the pinned file byte for byte (``tests/test_register.py``); the reader is
+``register_rows`` rebuilds each pinned file byte for byte (``tests/test_register.py``); the reader is
 :func:`binding_bench.binding.readers.register`.
 """
 
 from __future__ import annotations
 
 import random
+from dataclasses import dataclass
 from typing import Any, Sequence
 
 from binding_bench.binding.stagegauges import FILLERS, Episode, Row, _parse, _scene_sentence
 
 REGISTERS = ("seen", "utag", "usyntax")
 SEED = 2611
-STATIC_SCENES = 400
-DYNAMIC_PER_CELL = 200            # deixis base items per cell: 600 P2 addressee + 600 P2 self
-SET_PER_CELL = 60                 # setbind base items per cell: 600
+
+
+@dataclass(frozen=True)
+class Version:
+    """One pinned generation of the battery: its sizes and the static construct's worked examples."""
+    name: str
+    static_scenes: int
+    dynamic_per_cell: int         # deixis base items per cell (×3 cells: P2 addressee; ×3 more: P2 self)
+    set_per_cell: int             # setbind base items per cell (×10 cells)
+    static_shots: tuple[str, ...]  # query kinds of the static construct's worked examples
+    static_cond: str              # that condition's name in the rows
+    shuffle_shots: bool           # v1 drew the order of its three kinds per scene
+
+
+# v1 (smoke only): its static examples were one third-person, one self and one addressee query, so two of the three
+# answered with the object of the name on the query line, and its static "you" reading inverted in every register.
+# v2 balances them: two self and two addressee queries, one of each spoken by each person, no third-person example.
+VERSIONS: dict[str, Version] = {
+    "register-v1": Version("register-v1", 400, 200, 60, ("third", "self", "addressee"), "3shot", True),
+    "register-v2": Version("register-v2", 800, 300, 240, ("self", "self", "addressee", "addressee"), "4shot", False),
+}
+STATIC_SCENES = VERSIONS["register-v1"].static_scenes
 
 # the invented registers' scaffolding: glyphs and nonce syllables, none of them an English word
 HEAD, PAIR, NARR, SAYS = "⁜", "⁘", "⁂", "≻"
@@ -89,14 +110,14 @@ def render_episode(ep: Episode, register: str, with_answer: bool, speaker: str =
     return "\n".join(lines)
 
 
-def dynamic_rows(seed: int = SEED, per_cell: int = DYNAMIC_PER_CELL) -> list[Row]:
+def dynamic_rows(v: Version, seed: int = SEED) -> list[Row]:
     from binding_bench.bindprobes import deixis
     from binding_bench.bindprobes.grid import build_payload_item
     from binding_bench.bindprobes.items import generate_family
     from binding_bench.bindprobes.pools import load_pools
 
     rows: list[Row] = []
-    for it in generate_family("deixis", load_pools(), per_cell, seed):
+    for it in generate_family("deixis", load_pools(), v.dynamic_per_cell, seed):
         p_, e_, q_ = it.cell
         if p_ != 2 or q_ not in ("self", "addressee") or it.meta["variant"] != "deictic":
             continue
@@ -184,34 +205,42 @@ def _static_gold(sc: dict[str, Any], qkind: str, speaker: str) -> str:
     return sc["held"][b if speaker == a else a]
 
 
-def static_rows(seed: int = SEED, scenes: int = STATIC_SCENES) -> list[Row]:
+def static_rows(v: Version, seed: int = SEED) -> list[Row]:
     from binding_bench.bindprobes.pools import load_pools
 
     split = load_pools()
     names_i = list(split.item.female) + list(split.item.male)
     names_s = list(split.shot.female) + list(split.shot.male)
-    rng = random.Random(f"register-v1:static:{seed}")
+    rng = random.Random(f"{v.name}:static:{seed}")
+    n_shots = len(v.static_shots)
     rows: list[Row] = []
-    for s in range(scenes):
+    for s in range(v.static_scenes):
         sc = _static_scene(rng, names_i, split.item.objects, s)
-        srng = random.Random(f"register-v1:static:{seed}:{s}:shots")
-        shot_kinds = ["third", "self", "addressee"]
-        srng.shuffle(shot_kinds)
+        srng = random.Random(f"{v.name}:static:{seed}:{s}:shots")
+        shot_kinds = list(v.static_shots)
+        if v.shuffle_shots:
+            srng.shuffle(shot_kinds)
+            first = [j % 2 == 0 for j in range(n_shots)]          # v1: the speaker alternates by position
+        else:
+            order = list(range(n_shots))
+            srng.shuffle(order)
+            shot_kinds = [v.static_shots[i] for i in order]
+            first = [i % 2 == 0 for i in order]                     # v2: each kind spoken once by each person
         shots = []
         for j, qk in enumerate(shot_kinds):
-            ex = _static_scene(srng, names_s, split.shot.objects, s * 3 + j)
+            ex = _static_scene(srng, names_s, split.shot.objects, s * n_shots + j)
             a, b = ex["people"]
-            spk = b if qk == "third" else (a if j % 2 == 0 else b)
+            spk = b if qk == "third" else (a if first[j] else b)
             shots.append((ex, qk, spk, _static_gold(ex, qk, spk)))
         a, b = sc["people"]
         cands = [" " + o for o in sc["objs"]]
         queries = [("third", "orig", b), ("self", "orig", a), ("self", "swap", b), ("addressee", "orig", a),
                    ("addressee", "swap", b)]
         for register in REGISTERS:
-            conds = ("3shot", "0shot") if register == "seen" else ("3shot",)
+            conds = (v.static_cond, "0shot") if register == "seen" else (v.static_cond,)
             for cond in conds:
                 head = ([render_static(ex, register, qk, spk, ans) for ex, qk, spk, ans in shots]
-                        if cond == "3shot" else [])
+                        if cond == v.static_cond else [])
                 for qkind, arm, spk in queries:
                     gold = _static_gold(sc, qkind, spk)
                     prompt = _sep(register).join(head + [render_static(sc, register, qkind, spk)])
@@ -248,12 +277,13 @@ def render_set(spec: dict[str, Any], register: str, answer: str = "") -> str:
     raise ValueError(f"unknown register {register!r}")
 
 
-def set_rows(seed: int = SEED, per_cell: int = SET_PER_CELL) -> list[Row]:
+def set_rows(v: Version, seed: int = SEED) -> list[Row]:
     from binding_bench.bindprobes.grid import build_payload_item
     from binding_bench.bindprobes.items import FairPool, fair_shots, generate_family
     from binding_bench.bindprobes.pools import load_pools
 
-    items = [it for it in generate_family("setbind", load_pools(), per_cell, seed) if it.meta.get("variant") == "lines"]
+    items = [it for it in generate_family("setbind", load_pools(), v.set_per_cell, seed)
+             if it.meta.get("variant") == "lines"]
     pool = FairPool(items)
     rows: list[Row] = []
     for it in items:
@@ -270,6 +300,9 @@ def set_rows(seed: int = SEED, per_cell: int = SET_PER_CELL) -> list[Row]:
     return rows
 
 
-def register_rows(seed: int = SEED) -> list[Row]:
-    """register-v1: static, then dynamic, then set rows."""
-    return static_rows(seed) + dynamic_rows(seed) + set_rows(seed)
+def register_rows(name: str = "register-v2", seed: int = SEED) -> list[Row]:
+    """One version's rows (:data:`VERSIONS`): static, then dynamic, then set."""
+    if name not in VERSIONS:
+        raise ValueError(f"unknown register battery {name!r}; choose from {sorted(VERSIONS)}")
+    v = VERSIONS[name]
+    return static_rows(v, seed) + dynamic_rows(v, seed) + set_rows(v, seed)
