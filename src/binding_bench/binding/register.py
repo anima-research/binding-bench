@@ -1,4 +1,4 @@
-"""register-v1 / -v2: the same binding scenes in a seen register and in two registers no text uses, paired item by item.
+"""register-v1 to -v3: the same binding scenes in a seen register and in two registers no text uses, paired item by item.
 
 A model that binds in the registers it has read may or may not bind when the same scene is written in a form it has
 never seen. Each scene is rendered three ways, with the same names, objects, pronouns, candidates and gold:
@@ -14,8 +14,8 @@ Three constructs, each read as its gauge reads it:
 
 * ``static``: P2 scenes stated once in narration (joinlite's design), queried as ``third`` (the lookup control),
   ``self`` and ``addressee``, the self and addressee queries also with the query speaker swapped. Worked examples in
-  the item's register, drawn from the shot pools (v2: two self and two addressee queries, one of each spoken by each
-  person); the seen register also runs 0-shot.
+  the item's register, drawn from the shot pools (v3: four of the query's own kind, two spoken by each person); the
+  seen register also runs 0-shot.
 * ``dynamic``: deixis P2 deictic self / addressee items (objects change hands through I / my / you lines), with the
   speaker of the query line swapped (swapdyn's design); the item's own 3 exemplars, in the item's register; the seen
   register also runs 0-shot. The seen 3-shot rendering reproduces the deixis payload byte for byte.
@@ -47,14 +47,17 @@ class Version:
     static_shots: tuple[str, ...]  # query kinds of the static construct's worked examples
     static_cond: str              # that condition's name in the rows
     shuffle_shots: bool           # v1 drew the order of its three kinds per scene
+    matched: bool = False         # v3: every query is shown worked examples of its own kind (``static_shots`` = one kind)
 
 
-# v1 (smoke only): its static examples were one third-person, one self and one addressee query, so two of the three
-# answered with the object of the name on the query line, and its static "you" reading inverted in every register.
-# v2 balances them: two self and two addressee queries, one of each spoken by each person, no third-person example.
+# v1 and v2 (smoke only): mixed static examples. v1's (one third-person, one self, one addressee query) and v2's (two
+# self, two addressee) both left a model that reads "you" right with no examples reading it as the speaker: its static
+# "you" swap shift inverted in every register. v3 shows each query worked examples of its own kind, as swapdyn does;
+# the speaker swap then still asks who the other person is, which is the binding.
 VERSIONS: dict[str, Version] = {
     "register-v1": Version("register-v1", 400, 200, 60, ("third", "self", "addressee"), "3shot", True),
     "register-v2": Version("register-v2", 800, 300, 240, ("self", "self", "addressee", "addressee"), "4shot", False),
+    "register-v3": Version("register-v3", 800, 300, 240, ("matched",) * 4, "4shot", False, True),
 }
 STATIC_SCENES = VERSIONS["register-v1"].static_scenes
 
@@ -226,12 +229,16 @@ def static_rows(v: Version, seed: int = SEED) -> list[Row]:
             srng.shuffle(order)
             shot_kinds = [v.static_shots[i] for i in order]
             first = [i % 2 == 0 for i in order]                     # v2: each kind spoken once by each person
-        shots = []
-        for j, qk in enumerate(shot_kinds):
-            ex = _static_scene(srng, names_s, split.shot.objects, s * n_shots + j)
-            a, b = ex["people"]
-            spk = b if qk == "third" else (a if first[j] else b)
-            shots.append((ex, qk, spk, _static_gold(ex, qk, spk)))
+        shots_for: dict[str, list[tuple[dict[str, Any], str, str, str]]] = {}
+        for kind in (("third", "self", "addressee") if v.matched else ("all",)):
+            shots = []
+            for j, qk in enumerate(shot_kinds):
+                qk = kind if v.matched else qk
+                ex = _static_scene(srng, names_s, split.shot.objects, s * n_shots + j)
+                a, b = ex["people"]
+                spk = (a if j % 2 == 0 else b) if v.matched else (b if qk == "third" else (a if first[j] else b))
+                shots.append((ex, qk, spk, _static_gold(ex, qk, spk)))
+            shots_for[kind] = shots
         a, b = sc["people"]
         cands = [" " + o for o in sc["objs"]]
         queries = [("third", "orig", b), ("self", "orig", a), ("self", "swap", b), ("addressee", "orig", a),
@@ -239,9 +246,10 @@ def static_rows(v: Version, seed: int = SEED) -> list[Row]:
         for register in REGISTERS:
             conds = (v.static_cond, "0shot") if register == "seen" else (v.static_cond,)
             for cond in conds:
-                head = ([render_static(ex, register, qk, spk, ans) for ex, qk, spk, ans in shots]
-                        if cond == v.static_cond else [])
                 for qkind, arm, spk in queries:
+                    shots = shots_for[qkind if v.matched else "all"]
+                    head = ([render_static(ex, register, qk, xs, ans) for ex, qk, xs, ans in shots]
+                            if cond == v.static_cond else [])
                     gold = _static_gold(sc, qkind, spk)
                     prompt = _sep(register).join(head + [render_static(sc, register, qkind, spk)])
                     rows.append({"id": f"rs{s:04d}|{register}|{cond}|{qkind}|{arm}", "construct": "static",

@@ -1,4 +1,4 @@
-"""register-v1 / -v2: the generator rebuilds each pin byte for byte, every scene's registers agree on candidates and gold, the
+"""register-v1 to -v3: the generator rebuilds each pin byte for byte, every scene's registers agree on candidates and gold, the
 seen rendering is the source battery's, and the reader reads a binder as binding in every register."""
 
 from __future__ import annotations
@@ -19,18 +19,18 @@ from binding_bench.binding.stagegauges import write_rows
 
 @pytest.fixture(scope="module")
 def rows() -> list[dict]:
-    return rg.register_rows("register-v2")
+    return rg.register_rows("register-v3")
 
 
 @pytest.mark.parametrize("name", sorted(rg.VERSIONS))
 def test_rebuilds_the_pin(name: str, rows: list[dict], tmp_path: Path) -> None:
-    built = rows if name == "register-v2" else rg.register_rows(name)
+    built = rows if name == "register-v3" else rg.register_rows(name)
     dest = write_rows(built, tmp_path / f"{name}.jsonl")
     assert hashlib.sha256(dest.read_bytes()).hexdigest() == bt.BATTERIES[name].sha256
 
 
 def test_shape(rows: list[dict]) -> None:
-    v = rg.VERSIONS["register-v2"]
+    v = rg.VERSIONS["register-v3"]
     c = collections.Counter((r["construct"], r["register"], r["condition"]) for r in rows)
     n_dyn = v.dynamic_per_cell * 6 * 2
     for reg in rg.REGISTERS:
@@ -41,17 +41,24 @@ def test_shape(rows: list[dict]) -> None:
     assert len({r["id"] for r in rows}) == len(rows)
 
 
-def test_static_examples_balance_the_answer_role(rows: list[dict]) -> None:
-    """Each static prompt's worked examples: two self and two addressee queries, each kind spoken once by each person,
-    so half answer with the speaker's object and half with the other person's."""
+def test_static_examples_match_the_query(rows: list[dict]) -> None:
+    """Each static query is shown four worked examples of its own kind, two spoken by each of their people, and the
+    swapped query the same four as the original."""
+    form = {"self": "I'm holding", "addressee": "you're holding", "third": "is holding"}
+    heads: dict[tuple, str] = {}
     for r in rows:
-        if r["construct"] != "static" or r["register"] != "seen" or r["condition"] == "0shot" or r["arm"] != "orig":
+        if r["construct"] != "static" or r["register"] != "seen" or r["condition"] == "0shot":
             continue
-        blocks = r["prompt"].split("\n\n* * *\n\n")[:-1]
-        assert len(blocks) == 4
-        last = [b.rsplit("\n", 1)[1] for b in blocks]
-        assert sum("I'm holding" in x for x in last) == 2 and sum("you're holding" in x for x in last) == 2
-        assert not any(x.startswith("Right now") for x in last)
+        blocks = r["prompt"].split("\n\n* * *\n\n")
+        assert len(blocks) == 5
+        last = [b.rsplit("\n", 1)[1] for b in blocks[:-1]]
+        assert all(form[r["qkind"]] in x for x in last)
+        if r["qkind"] != "third":
+            names = [b.split("\n")[0][len("A chat between "):].split(".")[0].split(" and ") for b in blocks[:-1]]
+            speakers = [x.split(":")[0] for x in last]
+            assert sum(s == n[0] for s, n in zip(speakers, names)) == 2
+        head = "\n\n* * *\n\n".join(blocks[:-1])
+        assert heads.setdefault((r["base_id"], r["qkind"]), head) == head
 
 
 def test_twins_agree(rows: list[dict]) -> None:
