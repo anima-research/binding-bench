@@ -52,6 +52,9 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--device", default="cuda")
     r.add_argument("--batch", type=int, default=32)
     r.add_argument("--no-pin-check", action="store_true", help="score files that differ from their pins (debug)")
+    r.add_argument("--over-limit", choices=("fail", "refuse"), default="fail",
+                   help="a prompt as long as the model's context: stop the run (fail), or record the row as refused and "
+                        "score the rest (refuse); never truncated")
     r.add_argument("--rows", action="append", default=[], metavar="NAME=FILE",
                    help="also score a prompt-row file with the same loaded model, into OUT/NAME/ (repeatable; e.g. "
                         "riders, a wording ladder, the situation battery)")
@@ -121,7 +124,8 @@ def cmd_run(a: argparse.Namespace) -> int:
     for b in bats:
         dest = out / b.name / f"{a.name}.jsonl"
         if b.kind == "rows":
-            score.score_prompt_rows(model, read_jsonl(paths[b.name]), dest, a.name, max_batch=a.batch)
+            score.score_prompt_rows(model, read_jsonl(paths[b.name]), dest, a.name, max_batch=a.batch,
+                                    over_limit=a.over_limit)
         else:
             from binding_bench.bindprobes.items import CONDITIONS, load_items
             items = load_items(paths[b.name])
@@ -129,7 +133,8 @@ def cmd_run(a: argparse.Namespace) -> int:
                 items = [it for it in items if it.family in b.families]
             score.score_bindprobe_items(model, items, b.conditions or CONDITIONS, dest, a.name, max_batch=a.batch)
     for name, path in extra:
-        score.score_prompt_rows(model, read_jsonl(path), out / name / f"{a.name}.jsonl", a.name, max_batch=a.batch)
+        score.score_prompt_rows(model, read_jsonl(path), out / name / f"{a.name}.jsonl", a.name, max_batch=a.batch,
+                                over_limit=a.over_limit)
     return 0
 
 
@@ -148,7 +153,7 @@ def cmd_report(a: argparse.Namespace) -> int:
             f = scores / b.name / f"{m}.jsonl"
             if b.reader is None or not f.exists():
                 continue
-            rows = read_jsonl(f)
+            rows = [r for r in read_jsonl(f) if not r.get("refused")]
             if rows:
                 res[b.reader] = readers.READERS[b.reader](rows)
         if res:

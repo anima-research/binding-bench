@@ -103,6 +103,52 @@ def test_prompt_rows_match_unpadded_reference_and_resume(tmp_path, tok):
         assert g["prompt_tokens"] == len(tok.encode(r["prompt"]))
 
 
+def test_over_limit_prompts_are_refused_never_truncated(tmp_path, tok):
+    """At a small context: ``fail`` stops on the first over-limit prompt; ``refuse`` records those rows as refused (no
+    scores, their token count) and scores the rest exactly as an unlimited model would; a resumed run adds nothing."""
+    from binding_bench.score import LogprobLimitError
+
+    rows = _rows()
+    limit = 12
+    small = LoadedModel(ModelSpec("hf", "stub"), _causal_logits, tok, torch.device("cpu"), limit)
+    lens = {r["id"]: len(tok.encode(r["prompt"])) for r in rows}
+    assert any(n >= limit for n in lens.values()) and any(n < limit for n in lens.values())
+    with pytest.raises(LogprobLimitError):
+        score_prompt_rows(small, rows, tmp_path / "fail.jsonl", "m", max_batch=4)
+    out = tmp_path / "refuse.jsonl"
+    assert score_prompt_rows(small, rows, out, "m", max_batch=4, over_limit="refuse") == len(rows)
+    assert score_prompt_rows(small, rows, out, "m", max_batch=4, over_limit="refuse") == 0
+    got = {g["id"]: g for g in read_jsonl(out)}
+    assert set(got) == {r["id"] for r in rows}
+    for r in rows:
+        g = got[r["id"]]
+        assert g["prompt_tokens"] == lens[r["id"]] and "prompt" not in g
+        if lens[r["id"]] >= limit:
+            assert g["refused"] and "cand_lps" not in g
+        else:
+            ref = _reference(tok, r)
+            assert "refused" not in g and all(abs(g["cand_lps"][k] - ref[k]) < 1e-4 for k in ref)
+    with pytest.raises(ValueError, match="over_limit"):
+        score_prompt_rows(small, rows, tmp_path / "x.jsonl", "m", over_limit="truncate")
+
+
+def test_register_reader_skips_refused_rows():
+    from binding_bench.binding import readers
+
+    def row(i, reg, arm, ok, refused=False):
+        r = {"id": f"{i}{reg}{arm}", "construct": "static", "register": reg, "condition": "4shot", "base_id": f"s{i}",
+             "qkind": "self", "arm": arm, "gold": "cup", "candidates": [" cup", " key"]}
+        if refused:
+            return {**r, "refused": "too long", "prompt_tokens": 99}
+        good = (arm == "orig") == ok
+        return {**r, "cand_lps": {"cup": 0.0 if good else -3.0, "key": -3.0 if good else 0.0}}
+
+    rows = [row(i, "seen", a, True) for i in range(20) for a in ("orig", "swap")]
+    rows += [row(i, "pad8192-span", a, True, refused=True) for i in range(20) for a in ("orig", "swap")]
+    res = readers.register(rows)
+    assert "static/seen/4shot" in res and "static/pad8192-span/4shot" not in res
+
+
 def test_prompt_rows_reject_bad_gold(tmp_path, tok):
     bad = _rows(2)
     bad[1]["gold"] = "zebra"

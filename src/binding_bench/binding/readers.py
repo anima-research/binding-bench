@@ -192,6 +192,7 @@ def register(rows: Sequence[Row]) -> dict[str, Any]:
     R = U / S. R is reported only where S's whole interval clears the bar (:data:`BIND`); below it R is noise."""
     out: dict[str, Any] = {}
     per_item: dict[tuple[str, str, str, str], dict[str, float]] = {}
+    rows = [r for r in rows if not r.get("refused")]          # over the model's context: no scores to read
     st = [r for r in rows if r["construct"] == "static" and not r.get("multi_token")]
     by = {(r["register"], r["condition"], r["base_id"], r["qkind"], r["arm"]): r for r in st}
     for reg, cond in sorted({(r["register"], r["condition"]) for r in st}):

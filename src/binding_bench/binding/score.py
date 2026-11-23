@@ -79,9 +79,22 @@ def _validate(rows: Iterable[Mapping[str, Any]]) -> None:
             raise ValueError(f"row {r['id']}: gold {r['gold']!r} is not a candidate")
 
 
+def refused_row(row: Mapping[str, Any], n_tokens: int, max_seq_len: int, model: str) -> dict[str, Any]:
+    """A row the model cannot read: its prompt is at least the model's context. It carries no scores; readers skip it."""
+    out = {k: v for k, v in row.items() if k != "prompt"}
+    out.update(model=model, prompt_tokens=n_tokens, refused=f"prompt of {n_tokens} tokens; the model reads at most "
+                                                            f"{max_seq_len - 1} before its answer position")
+    return out
+
+
 def score_prompt_rows(model: LoadedModel, rows: Sequence[Mapping[str, Any]], out: Path, name: str,
-                      max_batch: int = 32) -> int:
-    """Score prompt rows into ``out``; returns the number of rows written this call."""
+                      max_batch: int = 32, over_limit: str = "fail") -> int:
+    """Score prompt rows into ``out``; returns the number of rows written this call.
+
+    A prompt of ``model.max_seq_len`` tokens or more is never truncated. ``over_limit="fail"`` lets the scorer refuse
+    it (the run stops); ``"refuse"`` writes it as a :func:`refused_row` and scores the rest."""
+    if over_limit not in ("fail", "refuse"):
+        raise ValueError(f"over_limit must be fail or refuse, got {over_limit!r}")
     _validate(rows)
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -89,6 +102,16 @@ def score_prompt_rows(model: LoadedModel, rows: Sequence[Mapping[str, Any]], out
     todo = [r for r in rows if r["id"] not in done]
     log.info("%s → %s: %d of %d rows pending", name, out.name, len(todo), len(rows))
     t0, n = time.time(), 0
+    if over_limit == "refuse" and model.max_seq_len is not None:
+        lens = {r["id"]: len(model.tokenizer.encode(r["prompt"])) for r in todo}
+        over = [r for r in todo if lens[r["id"]] >= model.max_seq_len]
+        if over:
+            with out.open("a") as f:
+                for r in over:
+                    f.write(json.dumps(refused_row(r, lens[r["id"]], model.max_seq_len, name)) + "\n")
+            n += len(over)
+            log.info("%s: %d rows refused (prompt ≥ %d tokens)", out.name, len(over), model.max_seq_len)
+            todo = [r for r in todo if lens[r["id"]] < model.max_seq_len]
     with torch.inference_mode(), out.open("a") as f:
         for chunk in _chunks(todo, CHUNK):
             res = score_logprob_items(model.logits_fn, model.tokenizer, chunk, top_n=0, device=model.device,
