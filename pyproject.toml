@@ -17,6 +17,10 @@ dev = [
     "pytest",
     "pytest-xdist>=3.5",
 ]
+padbind-pool = [            # tools/build_padbind_pool.py: an HTTP range read of a public FineWeb-Edu parquet
+    "pyarrow>=15",
+    "huggingface_hub>=0.24",
+]
 
 # Checkpoint formats beyond hf: are loader plugins in this group: name = the spec kind, value = a callable
 # (ModelSpec, device) -> LoadedModel. kotodama registers `koto` from its own package.

@@ -60,6 +60,10 @@ BATTERIES: dict[str, Battery] = {b.name: b for b in (
     Battery("register-v3", "rows", "register-v3.jsonl",
             "ca4e0e98affb2e53f2e748e529e59a50f9de189e8f1fc1b9bbe9a3defcefce2d", "register",
             "binding in a seen register and two unseen ones, paired by scene (static / dynamic deixis, set binding)"),
+    Battery("padbind-v1", "rows", "padbind-v1.jsonl",
+            "8b93a3324e8eebe5c833c0005f18ae8bffb685c9a69c5726c73622555cd07d79", "register",
+            "register-v3's seen lookup, static-I and set-binding scenes with public text between scene and query, padded "
+            "to 1K / 4K / 8K / 16K tokens; one continuous span, or EOS-separated documents"),
     Battery("stage5-decomp-v1", "rows", "r3/stage5-decomp-v1.jsonl",
             "c5691c3eaccc8d1ab73a7e8dd837d513e9d90193fd39b448b87611f89c2e9a62", "decomp",
             "stage-5 decomposition, all 6 variants × 0shot / 3shot"),

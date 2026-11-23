@@ -35,6 +35,7 @@ CONSTRUCTS: dict[str, str] = {
     "fluid": "learn a new rule from the examples in the prompt",
     "crystallized": "recall a known fact in the same few-shot frame (the control for fluid)",
     "form-vs-update": "the cost of updating a binding against forming it, paired per item",
+    "binding-distance": "whether a binding survives natural text between the scene that states it and the query",
     "register-transfer": "whether a binding a model has in a register it has read carries to the same scene written in "
                          "a register no text uses",
 }
@@ -159,6 +160,13 @@ REGISTRY: dict[str, Eval] = {e.name: e for e in (
          "pronouns and nouns), paired item by item", ("register-v3", "register-v2", "register-v1"), "python -m binding_bench.binding gen-register",
          ("register-v3: 4shot matched (static), 3shot (dynamic), fair (set), per construct × register; U − S and U / S per "
           "unseen register",),
+         None, (), "pending"),
+    Eval("padbind", "binding-distance", "binding", "register-v3's seen lookup, static-I and set-binding scenes with public "
+         "FineWeb-Edu text inserted between the scene and its query, padded to 1K / 4K / 8K / 16K tokens, as one "
+         "continuous span or as EOS-separated documents, paired item by item with the unpadded scene",
+         ("padbind-v1",), "python -m binding_bench.binding gen-padbind --pool POOL",
+         ("per pad × filler condition: lookup accuracy, static-I swap shift, set soft; each paired against the unpadded "
+          "scene (U − S)",),
          None, (), "pending"),
     Eval("capacity", "capacity", "binding", "binding capacity, K50 after arXiv 2609.30634", ("capacity-v1",),
          "python -m binding_bench.binding gen-capacity", ("K50 on the `Name: task` frame, named with it",), None,

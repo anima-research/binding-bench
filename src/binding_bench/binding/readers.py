@@ -202,6 +202,8 @@ def register(rows: Sequence[Row]) -> dict[str, Any]:
             d = {i: _pnorm(by[(reg, cond, i, q, "orig")], by[(reg, cond, i, q, "orig")]["gold"])
                  - _pnorm(by[(reg, cond, i, q, "swap")], by[(reg, cond, i, q, "orig")]["gold"])
                  for i in ids if (reg, cond, i, q, "orig") in by and (reg, cond, i, q, "swap") in by}
+            if not d:
+                continue                    # a battery without this query kind (padbind carries static "I" only)
             cell[f"swap_{q}"] = _shift(list(d.values()))
             per_item[("static", f"swap_{q}", reg, cond)] = d
         out[f"static/{reg}/{cond}"] = cell
